@@ -1,0 +1,1 @@
+package br.com.ajudamutua.repository; import br.com.ajudamutua.model.DsarRequest; import org.springframework.data.jpa.repository.JpaRepository; import java.util.*; public interface DsarRequestRepository extends JpaRepository<DsarRequest,UUID>{List<DsarRequest> findByMemberIdOrderByRequestedAtDesc(UUID memberId);}

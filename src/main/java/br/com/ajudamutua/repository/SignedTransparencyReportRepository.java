@@ -1,0 +1,1 @@
+package br.com.ajudamutua.repository; import br.com.ajudamutua.model.SignedTransparencyReport; import org.springframework.data.jpa.repository.JpaRepository; import java.util.*; public interface SignedTransparencyReportRepository extends JpaRepository<SignedTransparencyReport,UUID>{Optional<SignedTransparencyReport> findTopByOrderByCreatedAtDesc();}

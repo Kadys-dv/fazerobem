@@ -1,0 +1,1 @@
+package br.com.ajudamutua.repository; import br.com.ajudamutua.model.KycVerification; import org.springframework.data.jpa.repository.JpaRepository; import java.util.*; public interface KycVerificationRepository extends JpaRepository<KycVerification,UUID>{ List<KycVerification> findByMemberIdOrderByCreatedAtDesc(UUID memberId); }
