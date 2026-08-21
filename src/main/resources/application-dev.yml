@@ -1,0 +1,13 @@
+spring:
+  jpa:
+    show-sql: false
+logging:
+  level:
+    org.springframework.security: INFO
+
+app:
+  crypto:
+    key-id: dev-local-v1
+    master-key-base64: ${APP_CRYPTO_MASTER_KEY_BASE64:}
+  security:
+    mfa-required-for-privileged: true

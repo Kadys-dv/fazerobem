@@ -1,0 +1,79 @@
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ajuda_mutua}
+    username: ${DB_USER:ajuda}
+    password: ${DB_PASSWORD:ajuda_dev}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+  servlet:
+    session:
+      timeout: 20m
+      cookie:
+        http-only: true
+        secure: ${SESSION_COOKIE_SECURE:false}
+        same-site: strict
+app:
+  crypto:
+    key-id: ${APP_CRYPTO_KEY_ID:local-v1}
+    master-key-base64: ${APP_CRYPTO_MASTER_KEY_BASE64:}
+  security:
+    mfa-required-for-privileged: ${MFA_REQUIRED_PRIVILEGED:true}
+    rate-limit-per-minute: ${RATE_LIMIT_PER_MINUTE:120}
+  privacy:
+    document-retention-days: ${DOCUMENT_RETENTION_DAYS:365}
+  reconciliation:
+    fixed-delay-ms: ${RECONCILIATION_DELAY_MS:60000}
+  outbox:
+    fixed-delay-ms: ${OUTBOX_DELAY_MS:5000}
+  documents:
+    path: ${DOCUMENTS_PATH:./data/aid-documents}
+  sandbox:
+    webhook-secret: ${SANDBOX_WEBHOOK_SECRET:}
+  webauthn:
+    rp-name: ${WEBAUTHN_RP_NAME:Ajuda Mutua Community}
+    rp-id: ${WEBAUTHN_RP_ID:localhost}
+    allowed-origins: ${WEBAUTHN_ALLOWED_ORIGINS:http://localhost:8080}
+  distributed-security:
+    redis-enabled: ${REDIS_SECURITY_ENABLED:true}
+    key-prefix: ${REDIS_KEY_PREFIX:ajuda-mutua}
+  kms:
+    provider: ${KMS_PROVIDER:local}
+    aws-key-id: ${AWS_KMS_KEY_ID:}
+  dsar:
+    export-ttl-hours: ${DSAR_EXPORT_TTL_HOURS:24}
+  backup:
+    directory: ${BACKUP_DIRECTORY:./data/backups}
+    retention-days: ${BACKUP_RETENTION_DAYS:14}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: never
+  tracing:
+    sampling:
+      probability: ${TRACE_SAMPLE_PROBABILITY:0.10}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
