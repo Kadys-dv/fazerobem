@@ -1,0 +1,17 @@
+package br.com.ajudamutua.security;
+import br.com.ajudamutua.repository.AppUserRepository; import br.com.ajudamutua.hardening.*; import java.time.Instant;
+import org.springframework.context.annotation.*; import org.springframework.beans.factory.annotation.Value; import org.springframework.security.authentication.LockedException; import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity; import org.springframework.security.config.annotation.web.builders.HttpSecurity; import org.springframework.security.core.userdetails.*; import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder; import org.springframework.security.crypto.password.PasswordEncoder; import org.springframework.security.web.SecurityFilterChain; import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter; import org.springframework.security.web.csrf.CookieCsrfTokenRepository; import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+@Configuration @EnableMethodSecurity
+public class SecurityConfig {
+ @Bean PasswordEncoder passwordEncoder(){return new BCryptPasswordEncoder(12);}
+ @Bean UserDetailsService userDetailsService(AppUserRepository users){return username->{var u=users.findByEmailIgnoreCase(username).orElseThrow(()->new UsernameNotFoundException("Usuário não encontrado")); if(u.getLockedUntil()!=null&&u.getLockedUntil().isAfter(Instant.now())) throw new LockedException("Conta temporariamente bloqueada"); return User.withUsername(u.getEmail()).password(u.getPasswordHash()).roles(u.getRole().name()).disabled(!u.isEnabled()).build();};}
+ @Bean SecurityFilterChain security(HttpSecurity http, RateLimitFilter rate, MfaEnforcementFilter mfa, LoginAttemptService loginAttempts, @Value("${app.webauthn.rp-name:Ajuda Mutua Community}") String rpName, @Value("${app.webauthn.rp-id:localhost}") String rpId, @Value("${app.webauthn.allowed-origins:http://localhost:8080}") String origins) throws Exception {
+  http.authorizeHttpRequests(a->a.requestMatchers("/","/index.html","/api/v1/transparency","/api/v1/transparency/ledger","/api/v1/aid-policies","/api/v1/auth/register","/api/v1/auth/csrf","/api/v1/sandbox/webhooks/payment","/api/v1/transparency/reports/**","/webauthn/authenticate/options","/login/webauthn","/login/webauthn.js").permitAll().anyRequest().authenticated())
+      .csrf(c->c.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()).ignoringRequestMatchers(new AntPathRequestMatcher("/api/v1/sandbox/webhooks/payment")))
+      .webAuthn(w->w.rpName(rpName).rpId(rpId).allowedOrigins(origins.split(",")))
+      .headers(h->h.contentSecurityPolicy(c->c.policyDirectives("default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"))).sessionManagement(sm->sm.sessionFixation(sf->sf.migrateSession()).maximumSessions(1))
+      .formLogin(f->f.successHandler((req,res,auth)->{loginAttempts.success(auth.getName(),req.getRemoteAddr());res.sendRedirect("/");}).failureHandler((req,res,ex)->{String email=req.getParameter("username");loginAttempts.failure(email,req.getRemoteAddr());res.sendRedirect("/login?error");}).permitAll()).logout(l->l.permitAll())
+      .addFilterBefore(rate,UsernamePasswordAuthenticationFilter.class).addFilterAfter(mfa,UsernamePasswordAuthenticationFilter.class);
+  return http.build();
+ }
+}
