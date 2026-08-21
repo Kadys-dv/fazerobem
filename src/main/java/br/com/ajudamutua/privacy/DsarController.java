@@ -1,0 +1,4 @@
+package br.com.ajudamutua.privacy;
+import br.com.ajudamutua.model.*; import org.springframework.web.bind.annotation.*; import java.util.*;
+@RestController @RequestMapping("/api/v1/privacy/dsar") public class DsarController {private final DsarService service; public DsarController(DsarService s){service=s;} public record RequestBody(DsarRequestType type){} public record CompleteBody(String notes){}
+ @PostMapping public DsarRequest create(@RequestBody RequestBody in){return service.request(in.type());} @GetMapping("/mine") public List<DsarRequest> mine(){return service.mine();} @GetMapping("/export/{memberId}") public Map<String,Object> export(@PathVariable UUID memberId){return service.export(memberId);} @PostMapping("/{id}/complete") public DsarRequest complete(@PathVariable UUID id,@RequestBody CompleteBody in){return service.complete(id,in.notes());}}
