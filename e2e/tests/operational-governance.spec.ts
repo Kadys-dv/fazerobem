@@ -11,6 +11,11 @@ async function login(page: Page, email: string) {
   await page.locator('#loginPassword').fill(DEMO_PASSWORD);
   await page.locator('#loginForm').getByRole('button', { name: 'Entrar' }).click();
   await expect(page.getByRole('button', { name: 'Sair' })).toBeVisible();
+  const me = await page.request.get('/api/v1/auth/me');
+  expect(me.ok(), `auth/me failed with ${me.status()}: ${await me.text()}`).toBeTruthy();
+  const body = await me.json();
+  expect(body.authenticated).toBe(true);
+  expect(body.email).toBe(email);
 }
 
 async function logout(page: Page) {
@@ -19,11 +24,21 @@ async function logout(page: Page) {
   await expect(page.getByRole('button', { name: 'Entrar' })).toBeVisible();
 }
 
-async function openOperationalCase(page: Page, reason: string) {
+async function assertCaseVisibleToOperator(page: Page, aidId: string) {
+  const response = await page.request.get('/api/v1/aid-requests');
+  const text = await response.text();
+  expect(response.ok(), `aid queue failed with ${response.status()}: ${text}`).toBeTruthy();
+  const cases = JSON.parse(text);
+  expect(cases.some((x: { id: string }) => x.id === aidId), `aid ${aidId} missing from operator queue: ${text}`).toBeTruthy();
+}
+
+async function openOperationalCase(page: Page, aidId: string, reason: string) {
+  await assertCaseVisibleToOperator(page, aidId);
   await page.goto('/operations.html');
   await expect(page.getByRole('heading', { name: 'Fila operacional' })).toBeVisible();
-  const item = page.locator('.case-item').filter({ hasText: reason }).first();
+  const item = page.locator(`.case-item[data-id="${aidId}"]`);
   await expect(item).toBeVisible();
+  await expect(item).toContainText(reason);
   await item.click();
   await expect(page.locator('#caseReason')).toHaveText(reason);
 }
@@ -58,7 +73,7 @@ test('full aid governance requires analyst screening and two distinct approvers 
   await logout(page);
 
   await login(page, 'analyst@demo.local');
-  await openOperationalCase(page, reason);
+  await openOperationalCase(page, aidId, reason);
   await expect(page.locator('#analystActions')).toBeVisible();
   await expect(page.locator('#documentList')).toContainText('governanca-comprovante.png');
 
@@ -78,7 +93,7 @@ test('full aid governance requires analyst screening and two distinct approvers 
   await logout(page);
 
   await login(page, 'approver1@demo.local');
-  await openOperationalCase(page, reason);
+  await openOperationalCase(page, aidId, reason);
   await expect(page.locator('#approverActions')).toBeVisible();
   await page.locator('#approvalNote').fill('Primeira aprovação após análise documental e antifraude.');
   await page.locator('#approvalForm').getByRole('button', { name: 'Registrar aprovação' }).click();
@@ -92,7 +107,7 @@ test('full aid governance requires analyst screening and two distinct approvers 
   await logout(page);
 
   await login(page, 'approver2@demo.local');
-  await openOperationalCase(page, reason);
+  await openOperationalCase(page, aidId, reason);
   await page.locator('#approvalNote').fill('Segunda aprovação independente.');
   await page.locator('#approvalForm').getByRole('button', { name: 'Registrar aprovação' }).click();
   await expect(page.locator('#toast')).toContainText('Aprovação registrada');
@@ -103,7 +118,7 @@ test('full aid governance requires analyst screening and two distinct approvers 
 
   await login(page, 'admin@demo.local');
   const detailResponse = await page.request.get(`/api/v1/operations/aid-requests/${aidId}`);
-  expect(detailResponse.ok()).toBeTruthy();
+  expect(detailResponse.ok(), `case detail failed with ${detailResponse.status()}: ${await detailResponse.text()}`).toBeTruthy();
   const detail = await detailResponse.json();
   expect(detail.request.status).toBe('APPROVED');
   expect(detail.analyses).toHaveLength(1);
@@ -112,7 +127,7 @@ test('full aid governance requires analyst screening and two distinct approvers 
   expect(new Set(detail.approvals.map((x: { approverUserId: string }) => x.approverUserId)).size).toBe(2);
 
   const auditResponse = await page.request.get('/api/v1/audit-events');
-  expect(auditResponse.ok()).toBeTruthy();
+  expect(auditResponse.ok(), `audit failed with ${auditResponse.status()}: ${await auditResponse.text()}`).toBeTruthy();
   const audit = await auditResponse.json();
   const events = audit.filter((x: { entityType: string; entityId: string }) => x.entityType === 'AidRequest' && x.entityId === aidId);
   expect(events.some((x: { action: string }) => x.action === 'AID_REQUEST_CREATED')).toBeTruthy();
