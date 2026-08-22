@@ -16,4 +16,5 @@ public final class ApiDtos { private ApiDtos(){}
                                  BigDecimal categoryMaxAmount, BigDecimal currentFundLimit, int waitingDays, int cooldownDays,
                                  boolean documentRequired, long documentCount, String fraudStatus){}
  public record CategoryPolicy(AidCategory category,int waitingDays,int cooldownDays,BigDecimal maxAmount,boolean documentRequired){}
+ public record AidDocumentSummary(UUID id,String documentType,String fileName,String contentType,long sizeBytes,Instant createdAt){}
 }
