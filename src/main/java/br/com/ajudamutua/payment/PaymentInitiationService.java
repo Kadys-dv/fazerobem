@@ -33,7 +33,7 @@ public class PaymentInitiationService {
     private final AidPolicyService policy;
     private final LedgerService ledger;
     private final AuditService audit;
-    private final PaymentProvider provider;
+    private final PaymentProviderGateway provider;
 
     public PaymentInitiationService(AidRequestRepository aids,
                                     AidApprovalRepository approvals,
@@ -43,7 +43,7 @@ public class PaymentInitiationService {
                                     AidPolicyService policy,
                                     LedgerService ledger,
                                     AuditService audit,
-                                    PaymentProvider provider) {
+                                    PaymentProviderGateway provider) {
         this.aids = aids;
         this.approvals = approvals;
         this.attempts = attempts;
@@ -66,11 +66,8 @@ public class PaymentInitiationService {
         }
 
         AppUser actor = current.require();
-
-        // Serializa qualquer iniciação para o mesmo auxílio antes de chamar o provider.
         AidRequest aid = aids.findByIdForUpdate(aidId).orElseThrow();
 
-        // Uma requisição concorrente com a mesma chave pode ter concluído enquanto aguardávamos o lock.
         prior = findPrior(idempotencyKey, aidId);
         if (prior != null) {
             return prior;
@@ -78,19 +75,21 @@ public class PaymentInitiationService {
 
         validateReadyForPayment(aid, actor);
 
-        // Flush antes do side effect externo: invariantes únicas do banco falham antes do provider.
         PaymentAttempt payment = attempts.saveAndFlush(new PaymentAttempt(
                 UUID.randomUUID(), aidId, idempotencyKey, "SANDBOX", PaymentStatus.READY,
                 aid.getAmount(), actor.getId(), Instant.now()));
 
-        String providerReference = provider.initiate(payment.getId(), payment.getAmount()).providerReference();
-        payment.processing(providerReference);
+        PaymentProvider.Initiation initiation = provider.initiate(
+                payment.getId(), payment.getAmount(), payment.getIdempotencyKey());
+        payment.processing(initiation.providerReference());
 
         outbox.save(new OutboxEvent(
                 UUID.randomUUID(), "PaymentAttempt", payment.getId(), "PAYMENT_PROCESSING",
-                "{\"providerReference\":\"" + providerReference + "\"}", Instant.now()));
+                "{\"providerReference\":\"" + initiation.providerReference() +
+                        "\",\"providerRequestId\":\"" + initiation.providerRequestId() + "\"}", Instant.now()));
         audit.append(actor.getId(), "PAYMENT_INITIATED", "AidRequest", aidId,
-                "{\"paymentAttemptId\":\"" + payment.getId() + "\"}");
+                "{\"paymentAttemptId\":\"" + payment.getId() +
+                        "\",\"providerRequestId\":\"" + initiation.providerRequestId() + "\"}");
 
         return payment;
     }
