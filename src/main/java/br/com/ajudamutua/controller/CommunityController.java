@@ -2,6 +2,7 @@ package br.com.ajudamutua.controller;
 
 import br.com.ajudamutua.dto.ApiDtos;
 import br.com.ajudamutua.model.*;
+import br.com.ajudamutua.privacy.MemberConsentPolicy;
 import br.com.ajudamutua.service.CommunityService;
 import jakarta.validation.Valid;
 import java.nio.charset.StandardCharsets;
@@ -20,9 +21,11 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/api/v1")
 public class CommunityController {
     private final CommunityService service;
+    private final MemberConsentPolicy consentPolicy;
 
-    public CommunityController(CommunityService service) {
+    public CommunityController(CommunityService service, MemberConsentPolicy consentPolicy) {
         this.service = service;
+        this.consentPolicy = consentPolicy;
     }
 
     @PostMapping("/members")
@@ -34,12 +37,14 @@ public class CommunityController {
     @PostMapping("/contributions")
     @ResponseStatus(HttpStatus.CREATED)
     public LedgerEntry contribution(@Valid @RequestBody ApiDtos.Contribution in) {
+        consentPolicy.requireForCurrentMember();
         return service.contribute(in);
     }
 
     @PostMapping("/aid-requests")
     @ResponseStatus(HttpStatus.CREATED)
     public AidRequest aid(@Valid @RequestBody ApiDtos.CreateAid in) {
+        consentPolicy.requireForCurrentMember();
         return service.requestAid(in);
     }
 
@@ -59,6 +64,7 @@ public class CommunityController {
             @PathVariable UUID id,
             @RequestParam String documentType,
             @RequestPart("file") MultipartFile file) {
+        consentPolicy.requireForCurrentMember();
         return documentSummary(service.addDocument(id, documentType, file));
     }
 
