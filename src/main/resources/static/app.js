@@ -16,7 +16,22 @@ async function api(path,options={}){const method=(options.method||'GET').toUpper
 function openAuth(mode='login'){$('authDialog').showModal();switchAuth(mode);$('authMessage').textContent=''}
 function switchAuth(mode){const login=mode==='login';$('loginForm').classList.toggle('hidden',!login);$('registerForm').classList.toggle('hidden',login);$('loginTab').classList.toggle('active',login);$('registerTab').classList.toggle('active',!login)}
 
-async function loadSession(){try{state.me=await api('/api/v1/auth/me')}catch{state.me={authenticated:false}}const logged=state.me?.authenticated===true;$('authBtn').classList.toggle('hidden',logged);$('logoutBtn').classList.toggle('hidden',!logged);$('heroAuthBtn').textContent=logged?'Ir para minha área':'Participar da comunidade';if(logged&&state.me.role==='MEMBER'){$('memberArea').classList.remove('hidden');$('memberRole').textContent=state.me.role;$('welcomeTitle').textContent='Minha comunidade';await loadMine()}else{$('memberArea').classList.add('hidden')}}
+async function loadSession(){
+  try{state.me=await api('/api/v1/auth/me')}catch{state.me={authenticated:false}}
+  const logged=state.me?.authenticated===true;
+  $('authBtn').classList.toggle('hidden',logged);
+  $('logoutBtn').classList.toggle('hidden',!logged);
+  $('heroAuthBtn').textContent=logged?'Ir para minha área':'Participar da comunidade';
+  if(logged&&state.me.role==='MEMBER'){
+    $('memberArea').classList.remove('hidden');
+    $('memberRole').textContent=state.me.role;
+    $('welcomeTitle').textContent='Minha comunidade';
+    await loadMine();
+  }else{
+    $('memberArea').classList.add('hidden');
+  }
+  document.dispatchEvent(new CustomEvent('member-session-ready',{detail:{authenticated:logged,role:state.me?.role||null}}));
+}
 
 async function loadPublic(){try{const [t,policies,ledger]=await Promise.all([api('/api/v1/transparency'),api('/api/v1/aid-policies'),api('/api/v1/transparency/ledger')]);state.policies=policies;$('balance').textContent=brl(t.balance);$('members').textContent=t.activeMembers;$('requests').textContent=t.totalAidRequests;$('paid').textContent=t.paidAidRequests;renderPolicies();renderLedger(ledger);renderCategoryOptions()}catch(error){toast('Não foi possível atualizar a transparência: '+error.message)}}
 function renderPolicies(){$('policies').innerHTML=state.policies.map(p=>`<div class="policy-card"><strong>${escapeHtml(labels[p.category]||p.category)}</strong><div class="chips"><span class="chip">Teto ${brl(p.maxAmount)}</span><span class="chip">Carência ${p.waitingDays} dias</span><span class="chip">Intervalo ${p.cooldownDays} dias</span><span class="chip">Documento ${p.documentRequired?'obrigatório':'opcional'}</span></div></div>`).join('')||'<div class="empty-state">Nenhuma regra disponível.</div>'}
