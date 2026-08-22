@@ -35,6 +35,7 @@ public class PaymentInitiationService {
     private final LedgerService ledger;
     private final AuditService audit;
     private final PaymentProviderGateway provider;
+    private final PaymentOperationGate operationGate;
 
     @Autowired
     public PaymentInitiationService(AidRequestRepository aids,
@@ -45,7 +46,8 @@ public class PaymentInitiationService {
                                     AidPolicyService policy,
                                     LedgerService ledger,
                                     AuditService audit,
-                                    PaymentProviderGateway provider) {
+                                    PaymentProviderGateway provider,
+                                    PaymentOperationGate operationGate) {
         this.aids = aids;
         this.approvals = approvals;
         this.attempts = attempts;
@@ -55,6 +57,7 @@ public class PaymentInitiationService {
         this.ledger = ledger;
         this.audit = audit;
         this.provider = provider;
+        this.operationGate = operationGate;
     }
 
     PaymentInitiationService(AidRequestRepository aids,
@@ -67,7 +70,7 @@ public class PaymentInitiationService {
                              AuditService audit,
                              PaymentProvider provider) {
         this(aids, approvals, attempts, outbox, current, policy, ledger, audit,
-                new PaymentProviderGateway(provider, 1, 2000, 0));
+                new PaymentProviderGateway(provider, 1, 2000, 0), new PaymentOperationGate(true));
     }
 
     @Transactional
@@ -76,6 +79,8 @@ public class PaymentInitiationService {
         requireIdempotencyKey(idempotencyKey);
         PaymentAttempt prior = findPrior(idempotencyKey, aidId);
         if (prior != null) return prior;
+
+        operationGate.requireInitiationAllowed();
 
         AppUser actor = current.require();
         AidRequest aid = aids.findByIdForUpdate(aidId).orElseThrow();
