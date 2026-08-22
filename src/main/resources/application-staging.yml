@@ -34,6 +34,13 @@ app:
   payments:
     initiation-enabled: ${PAYMENT_INITIATION_ENABLED:false}
 management:
+  server:
+    address: 127.0.0.1
+    port: ${MANAGEMENT_PORT:18081}
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,metrics
   endpoint:
     health:
       show-details: never
