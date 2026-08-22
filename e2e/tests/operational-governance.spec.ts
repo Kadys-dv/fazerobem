@@ -70,6 +70,7 @@ test('full aid governance settles approved aid through signed sandbox webhook an
   await page.locator('#contributionConsent').check();
   await page.getByRole('button', { name: 'Registrar contribuição sandbox' }).click();
   await expect(page.locator('#toast')).toContainText('Contribuição sandbox registrada');
+  await expect(page.locator('#toast')).toBeHidden({ timeout: 5_000 });
 
   await page.locator('#aidCategory').selectOption('HEALTH');
   await page.locator('#aidAmount').fill('10,00');
