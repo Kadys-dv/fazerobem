@@ -35,9 +35,13 @@ elegibilidade objetiva
         ↓
 análise antifraude
         ↓
-dupla aprovação
+dupla aprovação independente
         ↓
-pagamento sandbox
+admin inicia pagamento sandbox
+        ↓
+webhook HMAC confirma liquidação
+        ↓
+PAID
         ↓
 ledger + auditoria + transparência
 ```
@@ -54,9 +58,31 @@ Não existem:
 
 ## Estado atual — Fase 7
 
-A versão atual está em **validation & pentest readiness** e permanece sem dinheiro real.
+A versão atual está em **validation, financial hardening & pentest readiness** e permanece sem dinheiro real.
 
-Principais controles já previstos no código:
+O fluxo sandbox completo já é validado automaticamente de ponta a ponta:
+
+```text
+MEMBER
+  → contribuição sandbox
+  → pedido de auxílio + documento
+ANALYST
+  → parecer + antifraude
+APPROVER #1
+  → primeira aprovação
+APPROVER #2
+  → segunda aprovação independente
+ADMIN
+  → inicia tentativa de pagamento
+SANDBOX PROVIDER
+  → webhook HMAC SETTLED
+SISTEMA
+  → PAID + AID_PAYMENT no ledger + auditoria
+```
+
+O painel operacional permite que `ADMIN` inicie uma tentativa de pagamento somente para pedidos `APPROVED`. `ADMIN` e `AUDITOR` podem acompanhar o histórico e os estados da tentativa. A interface **não possui ação para forçar um pedido para `PAID`**: a liquidação depende da confirmação autenticada do provedor sandbox.
+
+### Controles implementados
 
 - ledger financeiro encadeado por SHA-256;
 - trilha de auditoria encadeada;
@@ -68,14 +94,44 @@ Principais controles já previstos no código:
 - WebAuthn/passkeys e TOTP para perfis privilegiados;
 - Redis para controles distribuídos;
 - idempotência de pagamentos;
-- webhook HMAC com proteção contra replay;
+- webhook HMAC com proteção contra replay e janela temporal;
+- estados de pagamento `PROCESSING`, `SETTLED`, `FAILED` e `RECONCILIATION_REQUIRED`;
 - reconciliação explícita de pagamentos incertos;
 - relatórios públicos assinados com Ed25519;
 - recuperação administrativa com dual control;
 - Testcontainers PostgreSQL + Redis;
-- base E2E Playwright com autenticador WebAuthn virtual;
+- E2E Playwright com autenticador WebAuthn virtual;
+- E2E live do fluxo completo até `PAID`, ledger e auditoria;
 - scripts de backup, restore e verificação de integridade;
-- SBOM CycloneDX, OWASP Dependency-Check e CodeQL.
+- SBOM CycloneDX, OWASP Dependency-Check, secret scan e CodeQL.
+
+### Gate financeiro validado em sandbox
+
+O E2E de governança financeira verifica automaticamente que:
+
+1. o pedido só chega a `APPROVED` após análise, antifraude e duas aprovações distintas;
+2. o admin consegue apenas iniciar a tentativa;
+3. a tentativa entra em `PROCESSING`;
+4. o webhook de settlement precisa de assinatura HMAC válida;
+5. o settlement leva o auxílio para `PAID`;
+6. existe exatamente um lançamento `AID_PAYMENT` correspondente no ledger;
+7. `PAYMENT_INITIATED` e `PAYMENT_SETTLED` ficam registrados na auditoria.
+
+### Próxima etapa
+
+A etapa em desenvolvimento é o **hardening dos caminhos de falha do pagamento**, cobrindo principalmente:
+
+- replay de webhook;
+- assinatura HMAC inválida;
+- webhook fora da janela temporal;
+- pagamento `FAILED`;
+- `RECONCILIATION_REQUIRED`;
+- repetição de iniciação com a mesma chave de idempotência;
+- prevenção de dupla liquidação/débito duplicado;
+- saldo insuficiente;
+- recuperação e reconciliação administrativa auditável.
+
+Nenhum desses testes utiliza dinheiro real.
 
 ## Executar localmente
 
@@ -104,7 +160,7 @@ http://localhost:8080
 Antes de qualquer piloto com recursos reais, o projeto exige no mínimo:
 
 - `mvn clean verify` reproduzível;
-- execução completa dos E2E;
+- execução completa dos E2E positivos e negativos;
 - pentest independente;
 - restauração de backup testada;
 - KMS/secret manager real;
@@ -125,6 +181,8 @@ Consulte:
 ## Importante
 
 A integração financeira desta fase é **SANDBOX**. Não há PIX real, custódia de valores ou promessa de retorno financeiro.
+
+O objetivo técnico atual é provar segurança, governança, consistência contábil e comportamento previsível diante de falhas antes de considerar qualquer integração financeira real.
 
 ## Licença
 
