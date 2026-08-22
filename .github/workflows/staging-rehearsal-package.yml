@@ -1,0 +1,63 @@
+name: staging-rehearsal-package
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  staging-rehearsal-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate shell syntax
+        run: |
+          bash -n scripts/staging-rehearsal.sh
+          bash -n scripts/backup.sh
+          bash -n scripts/restore.sh
+          bash -n scripts/external-health-check.sh
+
+      - name: Refuse missing staging acknowledgement
+        run: |
+          if PAYMENT_INITIATION_ENABLED=false STAGING_BASE_URL=https://staging.example.test DB_URL=postgresql://example.invalid/db \
+            bash scripts/staging-rehearsal.sh preflight; then
+            echo "preflight deveria falhar sem STAGING_REHEARSAL_ACK" >&2
+            exit 1
+          fi
+
+      - name: Refuse HTTP staging URL
+        run: |
+          if STAGING_REHEARSAL_ACK=I_UNDERSTAND_STAGING_ONLY PAYMENT_INITIATION_ENABLED=false \
+            STAGING_BASE_URL=http://staging.example.test DB_URL=postgresql://example.invalid/db \
+            bash scripts/staging-rehearsal.sh preflight; then
+            echo "preflight deveria recusar HTTP" >&2
+            exit 1
+          fi
+
+      - name: Refuse payment initiation enabled
+        run: |
+          if STAGING_REHEARSAL_ACK=I_UNDERSTAND_STAGING_ONLY PAYMENT_INITIATION_ENABLED=true \
+            STAGING_BASE_URL=https://staging.example.test DB_URL=postgresql://example.invalid/db \
+            bash scripts/staging-rehearsal.sh preflight; then
+            echo "preflight deveria recusar pagamentos habilitados" >&2
+            exit 1
+          fi
+
+      - name: Accept safe preflight shape
+        run: |
+          STAGING_REHEARSAL_ACK=I_UNDERSTAND_STAGING_ONLY PAYMENT_INITIATION_ENABLED=false \
+            STAGING_BASE_URL=https://staging.example.test DB_URL=postgresql://example.invalid/db \
+            bash scripts/staging-rehearsal.sh preflight
+
+      - name: Refuse restore outside isolated validation target
+        run: |
+          touch /tmp/fake.dump /tmp/fake.dump.sha256
+          if STAGING_REHEARSAL_ACK=I_UNDERSTAND_STAGING_ONLY DB_URL=postgresql://example.invalid/db \
+            RESTORE_TARGET_KIND=active-staging bash scripts/staging-rehearsal.sh restore-isolated /tmp/fake.dump; then
+            echo "restore deveria recusar alvo não isolado" >&2
+            exit 1
+          fi
