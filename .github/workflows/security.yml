@@ -109,6 +109,9 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Generate ephemeral CI secrets
         shell: bash
         run: |
@@ -170,6 +173,16 @@ jobs:
           data=json.load(open('/tmp/me.json'))
           assert data == {'authenticated': False}, data
           PY
+      - name: Install browser E2E dependencies
+        working-directory: e2e
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+      - name: Run live member journey
+        working-directory: e2e
+        env:
+          BASE_URL: http://localhost:8080
+        run: npx playwright test tests/member-flow.spec.ts
       - name: Show application log on failure
         if: failure()
         run: cat /tmp/fazerobem-app.log || true
