@@ -77,6 +77,11 @@ document.addEventListener('member-session-ready',()=>{
   }
 });
 
-if(state.me?.authenticated&&state.me.role==='MEMBER'){
-  document.dispatchEvent(new Event('member-session-ready'));
+async function bootstrapMemberFeatures(){
+  for(let i=0;i<100&&state.me===null;i++)await new Promise(resolve=>setTimeout(resolve,50));
+  if(state.me?.authenticated&&state.me.role==='MEMBER'){
+    document.dispatchEvent(new Event('member-session-ready'));
+  }
 }
+
+void bootstrapMemberFeatures();
