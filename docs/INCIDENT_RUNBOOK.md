@@ -8,6 +8,17 @@ Runbook operacional para staging/piloto sandbox. Nunca colocar CPF, tokens, senh
 - **SEV-2:** pagamentos presos, reconciliação crescente, indisponibilidade parcial ou falha persistente de webhook.
 - **SEV-3:** degradação sem risco de integridade.
 
+## Sinais observáveis
+
+O endpoint `/actuator/prometheus` expõe, entre outras, as métricas operacionais:
+
+- `fazerobem_payment_processing_stuck`;
+- `fazerobem_payment_reconciliation_required`;
+- `fazerobem_payment_failed_current`;
+- `fazerobem_outbox_pending`.
+
+As regras de alerta versionadas ficam em `ops/prometheus/alerts.yml`.
+
 ## Procedimento geral
 
 1. Preservar evidências e identificar escopo sem apagar logs.
@@ -34,6 +45,20 @@ Runbook operacional para staging/piloto sandbox. Nunca colocar CPF, tokens, senh
 2. Comparar tentativa, provider, aid status, ledger e audit chain.
 3. Registrar evidências antes de qualquer ação administrativa.
 4. Usar somente reconciliação auditável.
+
+## Pagamento FAILED
+
+1. Confirmar se houve efeito externo no provider antes de qualquer retry.
+2. Se não houve efeito externo, manter o registro FAILED como evidência e abrir nova tentativa apenas pelo fluxo normal.
+3. Se houver incerteza, não repetir pagamento: mover a investigação para reconciliação.
+4. Verificar audit trail e idempotency key associada.
+
+## Outbox acumulando
+
+1. Verificar disponibilidade do consumidor/destino e erros de publicação.
+2. Não apagar eventos pendentes para reduzir a fila artificialmente.
+3. Confirmar que a ordem e a idempotência dos consumidores são preservadas antes de retomar.
+4. Após recuperação, acompanhar a redução de `fazerobem_outbox_pending` e procurar duplicidades.
 
 ## Webhook inválido ou replay
 
