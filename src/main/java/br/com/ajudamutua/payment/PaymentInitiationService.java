@@ -60,20 +60,26 @@ public class PaymentInitiationService {
     public PaymentAttempt initiate(UUID aidId, String idempotencyKey) {
         requireIdempotencyKey(idempotencyKey);
 
-        var prior = attempts.findByIdempotencyKey(idempotencyKey);
-        if (prior.isPresent()) {
-            if (!prior.get().getAidRequestId().equals(aidId)) {
-                throw new IllegalStateException("Idempotency-Key já usada");
-            }
-            return prior.get();
+        PaymentAttempt prior = findPrior(idempotencyKey, aidId);
+        if (prior != null) {
+            return prior;
         }
 
         AppUser actor = current.require();
-        AidRequest aid = aids.findById(aidId).orElseThrow();
+
+        // Serializa qualquer iniciação para o mesmo auxílio antes de chamar o provider.
+        AidRequest aid = aids.findByIdForUpdate(aidId).orElseThrow();
+
+        // Uma requisição concorrente com a mesma chave pode ter concluído enquanto aguardávamos o lock.
+        prior = findPrior(idempotencyKey, aidId);
+        if (prior != null) {
+            return prior;
+        }
 
         validateReadyForPayment(aid, actor);
 
-        PaymentAttempt payment = attempts.save(new PaymentAttempt(
+        // Flush antes do side effect externo: invariantes únicas do banco falham antes do provider.
+        PaymentAttempt payment = attempts.saveAndFlush(new PaymentAttempt(
                 UUID.randomUUID(), aidId, idempotencyKey, "SANDBOX", PaymentStatus.READY,
                 aid.getAmount(), actor.getId(), Instant.now()));
 
@@ -87,6 +93,17 @@ public class PaymentInitiationService {
                 "{\"paymentAttemptId\":\"" + payment.getId() + "\"}");
 
         return payment;
+    }
+
+    private PaymentAttempt findPrior(String idempotencyKey, UUID aidId) {
+        var prior = attempts.findByIdempotencyKey(idempotencyKey);
+        if (prior.isEmpty()) {
+            return null;
+        }
+        if (!prior.get().getAidRequestId().equals(aidId)) {
+            throw new IllegalStateException("Idempotency-Key já usada");
+        }
+        return prior.get();
     }
 
     private void requireIdempotencyKey(String idempotencyKey) {
