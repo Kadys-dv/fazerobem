@@ -2,7 +2,7 @@
 set -euo pipefail
 
 : "${STAGING_BASE_URL:?STAGING_BASE_URL é obrigatório}"
-: "${HEALTH_PATH:=/actuator/health}"
+: "${HEALTH_PATH:=/health}"
 : "${HEALTH_TIMEOUT_SECONDS:=10}"
 
 if [[ "$STAGING_BASE_URL" != https://* ]] && [ "${ALLOW_HTTP_FOR_TEST:-false}" != "true" ]; then
