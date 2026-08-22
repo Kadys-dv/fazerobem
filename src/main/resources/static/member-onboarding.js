@@ -81,6 +81,7 @@ function refreshMemberFeatures(){
 }
 
 document.addEventListener('member-session-ready',refreshMemberFeatures);
+document.addEventListener('member-contribution-recorded',()=>{void loadMemberContributions()});
 
 async function refreshAfterAuthTransition(){
   for(let i=0;i<100;i++){
