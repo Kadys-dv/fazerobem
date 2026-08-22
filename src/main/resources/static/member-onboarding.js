@@ -82,11 +82,23 @@ function refreshMemberFeatures(){
 
 document.addEventListener('member-session-ready',refreshMemberFeatures);
 
-const baseLoadSession=loadSession;
-loadSession=async function(){
-  await baseLoadSession();
-  document.dispatchEvent(new Event('member-session-ready'));
-};
+async function refreshAfterAuthTransition(){
+  for(let i=0;i<100;i++){
+    if(state.me?.authenticated===true){
+      refreshMemberFeatures();
+      return;
+    }
+    await new Promise(resolve=>setTimeout(resolve,50));
+  }
+}
+
+for(const formId of ['loginForm','registerForm']){
+  $(formId)?.addEventListener('submit',()=>{void refreshAfterAuthTransition()});
+}
+
+$('logoutBtn')?.addEventListener('click',()=>{
+  setTimeout(refreshMemberFeatures,0);
+});
 
 async function bootstrapMemberFeatures(){
   for(let i=0;i<100&&state.me===null;i++)await new Promise(resolve=>setTimeout(resolve,50));
