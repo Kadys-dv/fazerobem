@@ -1,13 +1,68 @@
-# Runbook de incidente
+# Incident Runbook
+
+Runbook operacional para staging/piloto sandbox. Nunca colocar CPF, tokens, senhas, segredos ou documentos integrais em tickets/logs.
+
+## Severidade
+
+- **SEV-1:** risco de efeito financeiro duplicado, corrupção de ledger/auditoria, acesso privilegiado indevido ou vazamento relevante de PII.
+- **SEV-2:** pagamentos presos, reconciliação crescente, indisponibilidade parcial ou falha persistente de webhook.
+- **SEV-3:** degradação sem risco de integridade.
+
+## Procedimento geral
 
 1. Preservar evidências e identificar escopo sem apagar logs.
-2. Revogar sessões e rotacionar segredos/chaves afetadas.
-3. Suspender pagamentos sandbox ou integração externa comprometida.
-4. Verificar integridade dos ledgers e audit_events.
+2. Suspender pagamentos sandbox ou integração externa afetada quando houver risco de integridade.
+3. Revogar sessões e rotacionar segredos/chaves afetadas quando necessário.
+4. Verificar integridade de ledger e auditoria.
 5. Isolar contas privilegiadas suspeitas.
-6. Identificar dados pessoais afetados e titulares potencialmente envolvidos.
-7. Acionar responsável jurídico/DPO para avaliar comunicação à ANPD e titulares nos prazos aplicáveis.
-8. Corrigir causa raiz, restaurar de fonte confiável e reconciliar pagamentos.
-9. Registrar relatório pós-incidente e ações preventivas.
+6. Identificar dados pessoais potencialmente afetados e acionar responsável jurídico/DPO quando aplicável.
+7. Corrigir causa raiz, restaurar de fonte confiável e reconciliar pagamentos.
+8. Registrar relatório pós-incidente e ações preventivas.
 
-Nunca colocar CPF, tokens, senhas ou documentos integrais em tickets/logs de incidente.
+## Pagamento preso em PROCESSING
+
+1. Não iniciar manualmente um segundo pagamento.
+2. Identificar `aidRequestId`, `paymentAttemptId`, `providerReference` e idempotency key.
+3. Consultar auditoria e eventos de webhook.
+4. Confirmar o estado do provider sandbox.
+5. Se o resultado for incerto, usar `RECONCILIATION_REQUIRED` pelo fluxo suportado.
+6. Nunca alterar diretamente ledger ou marcar `PAID` no banco.
+
+## RECONCILIATION_REQUIRED
+
+1. Tratar como SEV-2; elevar para SEV-1 se houver efeito externo sem ledger correspondente.
+2. Comparar tentativa, provider, aid status, ledger e audit chain.
+3. Registrar evidências antes de qualquer ação administrativa.
+4. Usar somente reconciliação auditável.
+
+## Webhook inválido ou replay
+
+1. Não reprocessar manualmente o payload rejeitado.
+2. Preservar `eventId`, timestamp, hash do corpo e motivo da rejeição sem registrar secrets/PII.
+3. Em volume anormal, aplicar contenção na borda e avaliar rotação do segredo.
+4. Confirmar que nenhuma mutação de pagamento/ledger ocorreu.
+
+## Divergência de ledger/auditoria
+
+1. Declarar SEV-1 e congelar operações sandbox de pagamento.
+2. Executar verificadores de integridade sem modificar dados.
+3. Preservar snapshot/backup e logs.
+4. Não reparar linhas manualmente.
+5. Restaurar em ambiente isolado para investigação.
+
+## PostgreSQL/Redis indisponível
+
+1. Suspender ações administrativas que possam produzir efeitos externos.
+2. Verificar health checks e conectividade.
+3. Após recuperação, validar outbox, tentativas `PROCESSING`, reconciliações e integridade das cadeias.
+4. Só retomar o fluxo após as verificações.
+
+## Evidências mínimas
+
+- horário UTC;
+- correlation/trace id quando disponível;
+- usuário/papel envolvido;
+- aid/payment/event ids;
+- estado antes/depois;
+- hashes relevantes sem PII/secrets;
+- decisão operacional e aprovadores.
