@@ -1,0 +1,38 @@
+groups:
+  - name: fazerobem-pilot-readiness
+    rules:
+      - alert: FazerOBemPaymentProcessingStuck
+        expr: fazerobem_payment_processing_stuck > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Pagamento sandbox preso em PROCESSING"
+          runbook: "docs/INCIDENT_RUNBOOK.md#pagamento-preso-em-processing"
+
+      - alert: FazerOBemPaymentNeedsReconciliation
+        expr: fazerobem_payment_reconciliation_required > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Há pagamentos aguardando reconciliação"
+          runbook: "docs/INCIDENT_RUNBOOK.md#reconciliation_required"
+
+      - alert: FazerOBemOutboxBacklog
+        expr: fazerobem_outbox_pending >= 50
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Backlog elevado na outbox"
+          runbook: "docs/INCIDENT_RUNBOOK.md#outbox-acumulando"
+
+      - alert: FazerOBemPaymentFailuresPresent
+        expr: fazerobem_payment_failed_current > 0
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "Existem tentativas de pagamento FAILED para revisão"
+          runbook: "docs/INCIDENT_RUNBOOK.md#pagamento-failed"
