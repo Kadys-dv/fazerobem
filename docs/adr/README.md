@@ -10,7 +10,17 @@ Os ADRs registram decisões que alteram segurança, governança, consistência o
 | [0004](0004-idempotency-concurrency.md) | Idempotência + locking + invariantes de banco | Accepted |
 | [0005](0005-webhook-authentication.md) | HMAC, timestamp e replay protection | Accepted |
 | [0006](0006-sandbox-first.md) | Sandbox obrigatório antes de dinheiro real | Accepted |
+| [0007](0007-postgresql-source-of-truth.md) | PostgreSQL como fonte de verdade | Accepted |
+| [0008](0008-redis-not-financial-source-of-truth.md) | Redis não é fonte de verdade financeira | Accepted |
+| [0009](0009-production-fail-closed.md) | Configuração de produção fail-closed | Accepted |
+| [0010](0010-modular-monolith.md) | Monólito modular antes de microserviços | Accepted |
+
+## Matriz de evidência
+
+A relação entre ameaça, controle, teste, gate de CI e evidência está em [`../THREAT_CONTROL_TEST_EVIDENCE.md`](../THREAT_CONTROL_TEST_EVIDENCE.md).
 
 ## Formato
 
 Cada ADR contém contexto, decisão, consequências e condições para revisão. Uma decisão aceita não deve ser silenciosamente substituída; uma mudança significativa cria um novo ADR que referencia o anterior.
+
+ADRs e CI não substituem as evidências externas obrigatórias da issue #38.
