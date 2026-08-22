@@ -19,6 +19,7 @@ async function json(url,options={}){
 
 function toast(message){const el=$('toast');if(!el)return;el.textContent=message;el.classList.remove('hidden');setTimeout(()=>el.classList.add('hidden'),3200);}
 function statusLabel(s){return ({PENDING:'Em análise',APPROVED:'Aprovado',REJECTED:'Rejeitado',PAID:'Pago'})[s]||s;}
+function paymentStatusLabel(s){return ({READY:'Pronto',PROCESSING:'Processando',SETTLED:'Liquidado',FAILED:'Falhou',RECONCILIATION_REQUIRED:'Reconciliação necessária'})[s]||s;}
 
 async function init(){
   if(state.initialized)return;
@@ -29,6 +30,7 @@ async function init(){
   $('operatorIdentity').textContent=`${state.me.email} · ${state.me.role}`;
   $('analystActions').classList.toggle('hidden',state.me.role!=='ANALYST');
   $('approverActions').classList.toggle('hidden',state.me.role!=='APPROVER');
+  $('paymentActions').classList.toggle('hidden',!['ADMIN','AUDITOR'].includes(state.me.role));
   bind();
   await loadCases();
 }
@@ -40,6 +42,7 @@ function bind(){
   $('fraudForm').addEventListener('submit',submitFraud);
   $('approvalForm').addEventListener('submit',submitApproval);
   $('rejectionForm').addEventListener('submit',submitRejection);
+  $('paymentForm').addEventListener('submit',submitPayment);
 }
 
 async function loadCases(){
@@ -64,6 +67,7 @@ async function selectCase(id,rerender=true){
     if(rerender)renderCases();
     const detail=await json(`/api/v1/operations/aid-requests/${id}`);
     renderDetail(detail);
+    if(['ADMIN','AUDITOR'].includes(state.me.role)) await loadPayments(id,detail.request.status);
   }catch(e){toast(e.message);}
 }
 
@@ -90,6 +94,15 @@ function renderDetail(d){
   if(state.me.role==='APPROVER') document.querySelectorAll('#approverActions button').forEach(b=>b.disabled=!pending);
 }
 
+async function loadPayments(aidId,aidStatus){
+  const rows=await json(`/api/v1/payments/${aidId}`);
+  $('paymentCount').textContent=rows.length;
+  $('paymentList').innerHTML=rows.length?rows.map(x=>`<div class="timeline-item"><strong>${esc(paymentStatusLabel(x.status))} · ${money(x.amount)}</strong><small>${date(x.updatedAt)} · ref ${esc(x.providerReference||'aguardando')}</small></div>`).join(''):'<p>Nenhuma tentativa de pagamento registrada.</p>';
+  const active=rows.some(x=>['READY','PROCESSING','SETTLED','RECONCILIATION_REQUIRED'].includes(x.status));
+  $('paymentForm').classList.toggle('hidden',state.me.role!=='ADMIN');
+  $('initiatePaymentButton').disabled=state.me.role!=='ADMIN'||aidStatus!=='APPROVED'||active;
+}
+
 function historyHtml(d){
   const rows=[];
   rows.push({at:d.request.createdAt,title:'Pedido criado',text:`${d.request.category} · ${money(d.request.amount)}`});
@@ -97,6 +110,7 @@ function historyHtml(d){
   if(d.fraudScreening) rows.push({at:d.fraudScreening.createdAt,title:`Antifraude: ${d.fraudScreening.status}`,text:`Risco ${d.fraudScreening.riskScore}/100 · ${d.fraudScreening.note}${d.fraudScreening.flags?' · '+d.fraudScreening.flags:''}`});
   (d.approvals||[]).forEach((x,i)=>rows.push({at:x.createdAt,title:`Aprovação ${i+1}`,text:x.note}));
   if(d.request.status==='APPROVED')rows.push({at:d.request.updatedAt||d.request.createdAt,title:'Dupla aprovação concluída',text:d.request.decisionReason||'Pedido aprovado.'});
+  if(d.request.status==='PAID')rows.push({at:d.request.updatedAt||d.request.createdAt,title:'Auxílio pago',text:d.request.decisionReason||'Pagamento liquidado e registrado no ledger.'});
   if(d.request.status==='REJECTED')rows.push({at:d.request.updatedAt||d.request.createdAt,title:'Pedido rejeitado',text:d.request.decisionReason||'Rejeição registrada.'});
   return rows.sort((a,b)=>new Date(a.at)-new Date(b.at)).map(x=>`<div class="timeline-item"><strong>${esc(x.title)}</strong><small>${date(x.at)}</small><div>${esc(x.text)}</div></div>`).join('');
 }
@@ -105,6 +119,17 @@ async function submitAnalysis(ev){ev.preventDefault();await act(`/api/v1/aid-req
 async function submitFraud(ev){ev.preventDefault();await act(`/api/v1/aid-requests/${state.selectedId}/fraud-screening`,{status:$('fraudStatus').value,riskScore:Number($('riskScore').value),flags:$('fraudFlags').value,note:$('fraudNote').value},'Triagem antifraude concluída');$('fraudForm').reset();$('riskScore').value='0';}
 async function submitApproval(ev){ev.preventDefault();await act(`/api/v1/aid-requests/${state.selectedId}/approve`,{note:$('approvalNote').value},'Aprovação registrada');$('approvalForm').reset();}
 async function submitRejection(ev){ev.preventDefault();await act(`/api/v1/aid-requests/${state.selectedId}/reject`,{note:$('rejectionNote').value},'Rejeição registrada');$('rejectionForm').reset();}
+async function submitPayment(ev){
+  ev.preventDefault();
+  if(!state.selectedId)return;
+  try{
+    const key=`ops-${state.selectedId}`;
+    await json(`/api/v1/payments/${state.selectedId}/initiate`,{method:'POST',headers:{'Idempotency-Key':key}});
+    toast('Pagamento sandbox iniciado');
+    await loadCases();
+    await selectCase(state.selectedId);
+  }catch(e){toast(e.message);}
+}
 async function act(url,body,success){
   try{await json(url,{method:'POST',body:JSON.stringify(body)});toast(success);await loadCases();await selectCase(state.selectedId);}catch(e){toast(e.message);}
 }

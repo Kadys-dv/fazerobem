@@ -193,10 +193,11 @@ jobs:
         run: |
           npm install
           npx playwright install --with-deps chromium
-      - name: Run live member and governance journeys
+      - name: Run live member, governance and settlement journeys
         working-directory: e2e
         env:
           BASE_URL: http://localhost:8080
+          SANDBOX_WEBHOOK_SECRET: ${{ env.SANDBOX_WEBHOOK_SECRET }}
         run: npx playwright test tests/member-flow.spec.ts tests/operational-governance.spec.ts --workers=1
       - name: Show application log on failure
         if: failure()

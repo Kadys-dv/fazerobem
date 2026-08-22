@@ -135,6 +135,17 @@
               </form>
             </article>
           </section>
+
+          <section id="paymentActions" class="role-actions hidden">
+            <article class="ops-card">
+              <div class="panel-title"><strong>Pagamento sandbox</strong><span id="paymentCount">0</span></div>
+              <p>O admin apenas inicia a tentativa. A liquidação é confirmada exclusivamente por webhook assinado do provedor sandbox.</p>
+              <form id="paymentForm" class="hidden">
+                <button id="initiatePaymentButton" class="primary" type="submit">Iniciar pagamento sandbox</button>
+              </form>
+              <div id="paymentList" class="timeline"></div>
+            </article>
+          </section>
         </div>
       </section>
     </section>
