@@ -40,6 +40,8 @@ app:
     rate-limit-per-minute: ${RATE_LIMIT_PER_MINUTE:120}
   privacy:
     document-retention-days: ${DOCUMENT_RETENTION_DAYS:365}
+  legal:
+    current-version: ${LEGAL_DOCUMENT_VERSION:2026-08-v1}
   reconciliation:
     fixed-delay-ms: ${RECONCILIATION_DELAY_MS:60000}
   outbox:
