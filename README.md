@@ -20,6 +20,16 @@ Plataforma de **ajuda mútua e fundo comunitário transparente**, construída pa
 - Testcontainers
 - Playwright
 
+## Release baseline
+
+A baseline atual de demonstração é **`v0.1.0-alpha`**. Ela permanece 100% sandbox e não autoriza movimentação de recursos reais.
+
+Consulte:
+
+- [`CHANGELOG.md`](CHANGELOG.md)
+- [`docs/RELEASE_v0.1.0-alpha.md`](docs/RELEASE_v0.1.0-alpha.md)
+- [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)
+
 ## Arquitetura
 
 A visão completa de componentes, papéis, fluxo de auxílio, segurança, pagamentos, ledger, auditoria e CI está em **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**.
