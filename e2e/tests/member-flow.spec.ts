@@ -9,10 +9,11 @@ test('member can register, contribute in sandbox and request aid', async ({ page
   await expect(page.locator('#balance')).not.toHaveText('—');
 
   await page.getByRole('button', { name: 'Participar da comunidade' }).click();
-  await page.locator('#registerName').fill('Membro E2E');
-  await page.locator('#registerEmail').fill(email);
-  await page.locator('#registerPassword').fill('TestOnly123!');
-  await page.getByRole('button', { name: 'Criar conta' }).click();
+  const registerForm = page.locator('#registerForm');
+  await registerForm.locator('#registerName').fill('Membro E2E');
+  await registerForm.locator('#registerEmail').fill(email);
+  await registerForm.locator('#registerPassword').fill('TestOnly123!');
+  await registerForm.getByRole('button', { name: 'Criar conta' }).click();
 
   await expect(page.locator('#memberArea')).toBeVisible();
   await expect(page.locator('#memberRole')).toHaveText('MEMBER');
