@@ -1,12 +1,9 @@
 package br.com.ajudamutua.payment;
 
-import br.com.ajudamutua.model.*;
-import br.com.ajudamutua.repository.AidRequestRepository;
-import br.com.ajudamutua.repository.OutboxEventRepository;
+import br.com.ajudamutua.model.PaymentAttempt;
+import br.com.ajudamutua.model.WebhookEvent;
 import br.com.ajudamutua.repository.PaymentAttemptRepository;
 import br.com.ajudamutua.repository.WebhookEventRepository;
-import br.com.ajudamutua.service.AuditService;
-import br.com.ajudamutua.service.LedgerService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,28 +12,19 @@ import java.util.UUID;
 
 @Service
 public class PaymentWebhookService {
-    private final AidRequestRepository aids;
     private final PaymentAttemptRepository attempts;
     private final WebhookEventRepository webhooks;
-    private final OutboxEventRepository outbox;
-    private final LedgerService ledger;
-    private final AuditService audit;
     private final WebhookSignatureService signatures;
+    private final PaymentSettlementService settlement;
 
-    public PaymentWebhookService(AidRequestRepository aids,
-                                 PaymentAttemptRepository attempts,
+    public PaymentWebhookService(PaymentAttemptRepository attempts,
                                  WebhookEventRepository webhooks,
-                                 OutboxEventRepository outbox,
-                                 LedgerService ledger,
-                                 AuditService audit,
-                                 WebhookSignatureService signatures) {
-        this.aids = aids;
+                                 WebhookSignatureService signatures,
+                                 PaymentSettlementService settlement) {
         this.attempts = attempts;
         this.webhooks = webhooks;
-        this.outbox = outbox;
-        this.ledger = ledger;
-        this.audit = audit;
         this.signatures = signatures;
+        this.settlement = settlement;
     }
 
     @Transactional
@@ -48,17 +36,15 @@ public class PaymentWebhookService {
                        String providerStatus) {
         validateAuthenticity(eventId, timestamp, signature, body);
 
-        // Força a restrição única de event_id antes de qualquer mutação financeira.
         WebhookEvent event = webhooks.saveAndFlush(new WebhookEvent(
                 UUID.randomUUID(), "SANDBOX", eventId, WebhookSignatureService.sha256(body),
                 Instant.parse(timestamp), Instant.now()));
 
-        // Serializa transições para a mesma referência do provider.
         PaymentAttempt payment = attempts.findByProviderReferenceForUpdate(providerReference)
                 .orElseThrow(() -> new IllegalArgumentException("Pagamento desconhecido"));
 
         if ("SETTLED".equalsIgnoreCase(providerStatus)) {
-            settle(payment, providerReference);
+            settlement.settle(payment, providerReference, "WEBHOOK");
         } else if ("FAILED".equalsIgnoreCase(providerStatus)) {
             payment.fail("Sandbox provider failure");
         } else {
@@ -78,27 +64,5 @@ public class PaymentWebhookService {
         if (webhooks.existsByEventId(eventId)) {
             throw new IllegalStateException("Webhook replay detectado");
         }
-    }
-
-    private void settle(PaymentAttempt payment, String providerReference) {
-        payment.settle();
-        AidRequest aid = aids.findById(payment.getAidRequestId()).orElseThrow();
-        if (aid.getStatus() == AidStatus.PAID) {
-            return;
-        }
-
-        LedgerEntry entry = ledger.append(
-                LedgerType.AID_PAYMENT,
-                aid.getAmount().negate(),
-                aid.getMemberId(),
-                aid.getId(),
-                "Auxílio comunitário liquidado via sandbox");
-
-        aid.markPaid();
-        outbox.save(new OutboxEvent(
-                UUID.randomUUID(), "AidRequest", aid.getId(), "AID_SETTLED",
-                "{\"ledgerEntryId\":\"" + entry.getId() + "\"}", Instant.now()));
-        audit.append(null, "PAYMENT_SETTLED", "AidRequest", aid.getId(),
-                "{\"providerReference\":\"" + providerReference + "\"}");
     }
 }
