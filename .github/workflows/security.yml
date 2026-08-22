@@ -178,11 +178,11 @@ jobs:
         run: |
           npm install
           npx playwright install --with-deps chromium
-      - name: Run live member journey
+      - name: Run live member and governance journeys
         working-directory: e2e
         env:
           BASE_URL: http://localhost:8080
-        run: npx playwright test tests/member-flow.spec.ts
+        run: npx playwright test tests/member-flow.spec.ts tests/operational-governance.spec.ts
       - name: Show application log on failure
         if: failure()
         run: cat /tmp/fazerobem-app.log || true
