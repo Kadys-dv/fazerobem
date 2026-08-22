@@ -57,7 +57,7 @@ class FreshDatabaseApplicationStartupTest {
                 "select count(*) from information_schema.columns where table_schema='public' and table_name='payment_attempts' and column_name='version'",
                 Integer.class);
 
-        assertEquals(8, migrations);
+        assertEquals(9, migrations);
         assertEquals(1, recoveryTable);
         assertEquals(1, paymentVersionColumn);
     }
