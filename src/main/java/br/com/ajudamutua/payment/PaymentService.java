@@ -1,9 +1,42 @@
 package br.com.ajudamutua.payment;
-import br.com.ajudamutua.model.*; import br.com.ajudamutua.repository.*; import br.com.ajudamutua.service.*; import org.springframework.security.access.prepost.PreAuthorize; import org.springframework.stereotype.Service; import org.springframework.transaction.annotation.Transactional; import java.time.*; import java.util.*;
-@Service public class PaymentService {
- private final AidRequestRepository aids; private final AidApprovalRepository approvals; private final PaymentAttemptRepository attempts; private final WebhookEventRepository webhooks; private final OutboxEventRepository outbox; private final CurrentUserService current; private final AidPolicyService policy; private final LedgerService ledger; private final LedgerEntryRepository ledgerRepo; private final AuditService audit; private final PaymentProvider provider; private final WebhookSignatureService signatures;
- public PaymentService(AidRequestRepository a,AidApprovalRepository ap,PaymentAttemptRepository pa,WebhookEventRepository w,OutboxEventRepository o,CurrentUserService c,AidPolicyService p,LedgerService l,LedgerEntryRepository lr,AuditService au,PaymentProvider pr,WebhookSignatureService s){aids=a;approvals=ap;attempts=pa;webhooks=w;outbox=o;current=c;policy=p;ledger=l;ledgerRepo=lr;audit=au;provider=pr;signatures=s;}
- @Transactional @PreAuthorize("hasRole('ADMIN')") public PaymentAttempt initiate(UUID aidId,String key){if(key==null||key.isBlank())throw new IllegalArgumentException("Idempotency-Key obrigatório");var prior=attempts.findByIdempotencyKey(key);if(prior.isPresent()){if(!prior.get().getAidRequestId().equals(aidId))throw new IllegalStateException("Idempotency-Key já usada");return prior.get();}AppUser u=current.require();AidRequest a=aids.findById(aidId).orElseThrow();if(attempts.existsByAidRequestIdAndStatusIn(aidId,List.of(PaymentStatus.READY,PaymentStatus.PROCESSING,PaymentStatus.SETTLED,PaymentStatus.RECONCILIATION_REQUIRED)))throw new IllegalStateException("Já existe tentativa ativa de pagamento para este auxílio");if(a.getStatus()!=AidStatus.APPROVED||approvals.countByAidRequestId(aidId)<2)throw new IllegalStateException("Pedido não está pronto para pagamento");if(approvals.findByAidRequestId(aidId).stream().anyMatch(x->x.getApproverUserId().equals(u.getId())))throw new IllegalStateException("Separação de funções violada");var eligibility=policy.evaluate(a);if(!eligibility.eligible())throw new IllegalStateException("Elegibilidade inválida: "+String.join("; ",eligibility.blockers()));if(ledger.balance().compareTo(a.getAmount())<0)throw new IllegalStateException("Fundo insuficiente");PaymentAttempt p=attempts.save(new PaymentAttempt(UUID.randomUUID(),aidId,key,"SANDBOX",PaymentStatus.READY,a.getAmount(),u.getId(),Instant.now()));String ref=provider.initiate(p.getId(),p.getAmount()).providerReference();p.processing(ref);outbox.save(new OutboxEvent(UUID.randomUUID(),"PaymentAttempt",p.getId(),"PAYMENT_PROCESSING","{\"providerReference\":\""+ref+"\"}",Instant.now()));audit.append(u.getId(),"PAYMENT_INITIATED","AidRequest",aidId,"{\"paymentAttemptId\":\""+p.getId()+"\"}");return p;}
- @Transactional public void handleWebhook(String eventId,String timestamp,String signature,String body,String providerRef,String status){if(!signatures.verify(timestamp,body,signature))throw new IllegalStateException("Assinatura de webhook inválida");if(webhooks.existsByEventId(eventId))throw new IllegalStateException("Webhook replay detectado");Instant ts=Instant.parse(timestamp);WebhookEvent evt=webhooks.save(new WebhookEvent(UUID.randomUUID(),"SANDBOX",eventId,WebhookSignatureService.sha256(body),ts,Instant.now()));PaymentAttempt p=attempts.findByProviderReference(providerRef).orElseThrow(()->new IllegalArgumentException("Pagamento desconhecido"));if("SETTLED".equalsIgnoreCase(status)){p.settle();AidRequest a=aids.findById(p.getAidRequestId()).orElseThrow();if(a.getStatus()!=AidStatus.PAID){LedgerEntry e=ledger.append(LedgerType.AID_PAYMENT,a.getAmount().negate(),a.getMemberId(),a.getId(),"Auxílio comunitário liquidado via sandbox");a.markPaid();outbox.save(new OutboxEvent(UUID.randomUUID(),"AidRequest",a.getId(),"AID_SETTLED","{\"ledgerEntryId\":\""+e.getId()+"\"}",Instant.now()));audit.append(null,"PAYMENT_SETTLED","AidRequest",a.getId(),"{\"providerReference\":\""+providerRef+"\"}");}} else if("FAILED".equalsIgnoreCase(status)){p.fail("Sandbox provider failure");} else {p.requireReconciliation();}evt.processed();}
- @PreAuthorize("hasAnyRole('ADMIN','AUDITOR')") public List<PaymentAttempt> attempts(UUID aidId){return attempts.findByAidRequestIdOrderByUpdatedAtDesc(aidId);}
+
+import br.com.ajudamutua.model.PaymentAttempt;
+import br.com.ajudamutua.repository.PaymentAttemptRepository;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.UUID;
+
+@Service
+public class PaymentService {
+    private final PaymentInitiationService initiation;
+    private final PaymentWebhookService webhooks;
+    private final PaymentAttemptRepository attempts;
+
+    public PaymentService(PaymentInitiationService initiation,
+                          PaymentWebhookService webhooks,
+                          PaymentAttemptRepository attempts) {
+        this.initiation = initiation;
+        this.webhooks = webhooks;
+        this.attempts = attempts;
+    }
+
+    public PaymentAttempt initiate(UUID aidId, String idempotencyKey) {
+        return initiation.initiate(aidId, idempotencyKey);
+    }
+
+    public void handleWebhook(String eventId,
+                              String timestamp,
+                              String signature,
+                              String body,
+                              String providerReference,
+                              String status) {
+        webhooks.handle(eventId, timestamp, signature, body, providerReference, status);
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','AUDITOR')")
+    public List<PaymentAttempt> attempts(UUID aidId) {
+        return attempts.findByAidRequestIdOrderByUpdatedAtDesc(aidId);
+    }
 }
