@@ -92,7 +92,7 @@ async function seedMember(index: number, runId: string): Promise<AidSeed | null>
       amount: '10.00',
       category: 'HEALTH',
       reason: `Simulação de piloto ${runId} membro ${index}`,
-      emergency: false
+      emergency: true
     });
     expect(aid.status(), `aid ${index}: ${await aid.text()}`).toBe(201);
     const created = await aid.json();
@@ -158,6 +158,12 @@ test('phase 8 pilot simulation preserves governance and financial invariants', a
         status: 'CLEARED', riskScore: 5, flags: 'Nenhum sinal relevante', note: 'Triagem sandbox concluída.'
       });
       expect(fraud.ok(), `fraud ${seed.id}: ${await fraud.text()}`).toBeTruthy();
+
+      const eligibilityResponse = await analyst.get(`/api/v1/aid-requests/${seed.id}/eligibility`);
+      expect(eligibilityResponse.ok(), `eligibility ${seed.id}: ${await eligibilityResponse.text()}`).toBeTruthy();
+      const eligibility = await eligibilityResponse.json();
+      expect(eligibility.waitingDays, `emergency HEALTH must have zero waiting for ${seed.id}`).toBe(0);
+      expect(eligibility.eligible, `aid must be eligible before approval ${seed.id}: ${JSON.stringify(eligibility.blockers)}`).toBe(true);
 
       const firstApproval = await jsonMutation(approver1, `/api/v1/aid-requests/${seed.id}/approve`, { note: 'Primeira aprovação independente do piloto.' });
       expect(firstApproval.ok(), `approval1 ${seed.id}: ${await firstApproval.text()}`).toBeTruthy();
@@ -237,6 +243,7 @@ test('phase 8 pilot simulation preserves governance and financial invariants', a
       paidSample: PAID_SAMPLE_COUNT,
       concurrency: CONCURRENCY,
       csrfStrategy: 'one token per authentication state/session',
+      eligibilityScenario: 'HEALTH emergency with zero effective waiting',
       invariants: { distinctApprovals: true, exactlyOnceLedgerDebit: true, paymentIdempotency: true, webhookReplayProtection: true }
     }, null, 2));
   } finally {
