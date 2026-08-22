@@ -94,12 +94,21 @@ jobs:
           export SANDBOX_WEBHOOK_SECRET="$STAGING_WEBHOOK_SECRET"
           nohup mvn -B spring-boot:run -Dspring-boot.run.profiles=staging > /tmp/staging-positive.log 2>&1 &
           echo $! > /tmp/staging-positive.pid
+          rm -f /tmp/staging-health.json /tmp/staging-health.tmp
           for i in {1..90}; do
-            if curl -fsS http://localhost:18080/actuator/health > /tmp/staging-health.json; then exit 0; fi
+            if curl -fsS http://localhost:18080/actuator/health -o /tmp/staging-health.tmp; then
+              mv /tmp/staging-health.tmp /tmp/staging-health.json
+              break
+            fi
+            rm -f /tmp/staging-health.tmp
             sleep 2
           done
-          cat /tmp/staging-positive.log
-          exit 1
+          if [ ! -s /tmp/staging-health.json ]; then
+            echo "ERRO: staging não retornou health válido"
+            cat /tmp/staging-positive.log
+            exit 1
+          fi
+          curl -fsS http://localhost:18080/actuator/health -o /tmp/staging-health.json
 
       - name: Validate staging health and hardened profile
         shell: bash
