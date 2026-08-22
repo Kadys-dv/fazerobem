@@ -17,13 +17,16 @@ public class OperationalMetrics implements MeterBinder {
     private final PaymentAttemptRepository payments;
     private final OutboxEventRepository outbox;
     private final Duration stuckAfter;
+    private final Duration criticalAfter;
 
     public OperationalMetrics(PaymentAttemptRepository payments,
                               OutboxEventRepository outbox,
-                              @Value("${app.observability.payment-stuck-after:PT10M}") Duration stuckAfter) {
+                              @Value("${app.observability.payment-stuck-after:PT10M}") Duration stuckAfter,
+                              @Value("${app.observability.payment-critical-after:PT30M}") Duration criticalAfter) {
         this.payments = payments;
         this.outbox = outbox;
         this.stuckAfter = stuckAfter;
+        this.criticalAfter = criticalAfter;
     }
 
     @Override
@@ -31,12 +34,24 @@ public class OperationalMetrics implements MeterBinder {
         Gauge.builder("fazerobem.payment.processing.stuck", payments,
                         repository -> repository.countByStatusAndUpdatedAtBefore(
                                 PaymentStatus.PROCESSING, Instant.now().minus(stuckAfter)))
-                .description("Payment attempts still PROCESSING beyond the operational threshold")
+                .description("Payment attempts still PROCESSING beyond the warning threshold")
+                .register(registry);
+
+        Gauge.builder("fazerobem.payment.processing.critical", payments,
+                        repository -> repository.countByStatusAndUpdatedAtBefore(
+                                PaymentStatus.PROCESSING, Instant.now().minus(criticalAfter)))
+                .description("Payment attempts still PROCESSING beyond the critical threshold")
                 .register(registry);
 
         Gauge.builder("fazerobem.payment.reconciliation.required", payments,
                         repository -> repository.countByStatus(PaymentStatus.RECONCILIATION_REQUIRED))
-                .description("Payment attempts requiring manual reconciliation")
+                .description("Payment attempts requiring reconciliation")
+                .register(registry);
+
+        Gauge.builder("fazerobem.payment.reconciliation.aged", payments,
+                        repository -> repository.countByStatusAndUpdatedAtBefore(
+                                PaymentStatus.RECONCILIATION_REQUIRED, Instant.now().minus(criticalAfter)))
+                .description("Payment attempts requiring reconciliation beyond the critical threshold")
                 .register(registry);
 
         Gauge.builder("fazerobem.payment.failed.current", payments,
