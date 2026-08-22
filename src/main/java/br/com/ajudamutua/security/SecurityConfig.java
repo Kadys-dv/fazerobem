@@ -56,7 +56,7 @@ public class SecurityConfig {
             @Value("${app.webauthn.allowed-origins:http://localhost:8080}") String origins) throws Exception {
 
         http.authorizeHttpRequests(a -> a
-                        .requestMatchers("/operations.html", "/operations.js", "/operations.css")
+                        .requestMatchers("/operations.html", "/operations.js", "/operations-dashboard.js", "/operations.css")
                         .hasAnyRole("ANALYST", "APPROVER", "ADMIN", "AUDITOR")
                         .requestMatchers(
                                 "/", "/index.html", "/app.css", "/app.js", "/member-onboarding.js",
