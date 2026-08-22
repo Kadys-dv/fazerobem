@@ -97,6 +97,7 @@ jobs:
           DB_USER: ajuda_staging
           REDIS_HOST: localhost
           REDIS_PORT: '6379'
+          REDIS_SSL_ENABLED: 'false'
           APP_CRYPTO_KEY_ID: staging-ci-v1
           WEBAUTHN_RP_ID: staging.example.invalid
           WEBAUTHN_ALLOWED_ORIGINS: https://staging.example.invalid
@@ -156,6 +157,7 @@ jobs:
           assert 'same-site: strict' in text, 'SameSite Strict is not enforced'
           assert 'password: ${DB_PASSWORD}' in text, 'Database password must be external'
           assert 'password: ${REDIS_PASSWORD}' in text, 'Redis password must be external'
+          assert 'enabled: ${REDIS_SSL_ENABLED:false}' in text, 'Redis TLS switch must be external and supported'
           assert 'webhook-secret: ${SANDBOX_WEBHOOK_SECRET}' in text, 'Webhook secret must be external'
           assert 'rp-id: ${WEBAUTHN_RP_ID}' in text, 'WebAuthn RP ID must be external'
           assert 'allowed-origins: ${WEBAUTHN_ALLOWED_ORIGINS}' in text, 'WebAuthn origin must be external'
