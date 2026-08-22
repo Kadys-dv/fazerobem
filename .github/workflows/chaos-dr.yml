@@ -52,11 +52,16 @@ jobs:
       - name: Wait for dependencies
         shell: bash
         run: |
+          ready=false
           for i in {1..40}; do
-            docker exec fazerobem-chaos-pg pg_isready -U ajuda_chaos -d ajuda_mutua_chaos >/dev/null 2>&1 && break
+            if pg_isready -h 127.0.0.1 -p 5432 -U ajuda_chaos -d ajuda_mutua_chaos >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
             sleep 2
           done
-          docker exec fazerobem-chaos-pg pg_isready -U ajuda_chaos -d ajuda_mutua_chaos
+          test "$ready" = "true"
+          pg_isready -h 127.0.0.1 -p 5432 -U ajuda_chaos -d ajuda_mutua_chaos
           for i in {1..40}; do
             docker exec fazerobem-chaos-redis redis-cli ping 2>/dev/null | grep -q PONG && break
             sleep 1
@@ -108,11 +113,16 @@ jobs:
         shell: bash
         run: |
           docker restart fazerobem-chaos-pg
+          ready=false
           for i in {1..40}; do
-            docker exec fazerobem-chaos-pg pg_isready -U ajuda_chaos -d ajuda_mutua_chaos >/dev/null 2>&1 && break
+            if pg_isready -h 127.0.0.1 -p 5432 -U ajuda_chaos -d ajuda_mutua_chaos >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
             sleep 2
           done
-          docker exec fazerobem-chaos-pg pg_isready -U ajuda_chaos -d ajuda_mutua_chaos
+          test "$ready" = "true"
+          pg_isready -h 127.0.0.1 -p 5432 -U ajuda_chaos -d ajuda_mutua_chaos
           for i in {1..40}; do
             curl -fsS http://localhost:8080/api/v1/transparency >/dev/null && exit 0
             sleep 2
