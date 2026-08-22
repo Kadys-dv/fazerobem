@@ -59,7 +59,8 @@ public class SecurityConfig {
                         .requestMatchers("/operations.html", "/operations.js", "/operations.css")
                         .hasAnyRole("ANALYST", "APPROVER", "ADMIN", "AUDITOR")
                         .requestMatchers(
-                                "/", "/index.html", "/app.css", "/app.js",
+                                "/", "/index.html", "/app.css", "/app.js", "/member-onboarding.js",
+                                "/terms.html", "/privacy.html", "/community-rules.html",
                                 "/manifest.webmanifest", "/sw.js", "/icon.svg",
                                 "/api/v1/transparency", "/api/v1/transparency/ledger",
                                 "/api/v1/aid-policies",
