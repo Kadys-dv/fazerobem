@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Registrar o estado operacional comprovado da Fase 8 antes do painel operacional e do gate da Fase 9.
+Registrar o estado operacional comprovado da Fase 8 e a evidência usada pelo gate de entrada na Fase 9.
 
 ## Baseline
 
@@ -15,7 +15,10 @@ A aplicação permanece **100% sandbox**. Nenhum gate descrito aqui autoriza din
 - PR #17 — staging hardening fail-closed;
 - PR #23 — simulação de piloto sandbox;
 - PR #24 — onboarding/consentimentos e histórico privado de contribuições;
-- PR #25 — carga e concorrência.
+- PR #25 — carga e concorrência;
+- PR #26 — sincronização documental da Fase 8;
+- PR #27 — evolução do painel operacional;
+- PR #28 — safeguards, reconciliação segura e E2E de segregação de funções.
 
 ## Simulação de piloto
 
@@ -47,6 +50,12 @@ O gate `load-concurrency` usa PostgreSQL, Redis e Testcontainers para validar:
 
 O relatório de cada execução é publicado como artifact do GitHub Actions.
 
+## Painel operacional
+
+A operação humana da Fase 8 cobre ANALYST, APPROVER, ADMIN e AUDITOR pela interface, preservando segregação de funções. O painel oferece fila, filtros, detalhe, documentos, antifraude, dupla aprovação, pagamentos sandbox, trilha de auditoria e tratamento seguro de reconciliação.
+
+Nenhuma ação administrativa força `PAID`. Uma nota em `RECONCILIATION_REQUIRED` é apenas evidência operacional auditada; a liquidação permanece dependente da confirmação externa autenticada.
+
 ## Gates obrigatórios atuais
 
 A baseline da Fase 8 considera os seguintes workflows como evidência operacional:
@@ -67,7 +76,8 @@ A baseline da Fase 8 considera os seguintes workflows como evidência operaciona
 - `LGPD.md` — baseline de privacidade e pontos pendentes de validação jurídica;
 - `PENTEST_READINESS_CHECKLIST.md` — preparação para avaliação independente;
 - `THREAT_MODEL.md` — ameaças e controles;
-- `SECURITY_CHECKS.md` — verificações de segurança.
+- `SECURITY_CHECKS.md` — verificações de segurança;
+- `PHASE_9_READINESS_DECISION.md` — decisão formal do gate de entrada na Fase 9.
 
 ## O que ainda não está autorizado
 
@@ -80,14 +90,10 @@ Mesmo com os gates verdes, o sistema **não está autorizado para dinheiro real*
 - provedor financeiro autorizado;
 - processos externos de reconciliação e monitoramento;
 - política LGPD formalmente validada;
-- operação humana comprovada pelo painel operacional.
+- backup/restore e runbook de go-live no ambiente real.
 
-## Próximo gate
+## Resultado da Fase 8
 
-A sequência de desenvolvimento permanece:
+As pré-condições técnicas internas para **iniciar trabalho de Production Readiness** foram concluídas. Isso é um GO para começar a Fase 9 em sandbox/staging, e **não** um GO para dinheiro real.
 
-1. concluir documentação da Fase 8 (#20);
-2. implementar painel operacional utilizável (#21);
-3. somente então avaliar o gate da Fase 9 (#22).
-
-Não iniciar Production Readiness antes dessa sequência.
+A decisão, os bloqueadores externos e o escopo autorizado estão registrados em `docs/PHASE_9_READINESS_DECISION.md`.
