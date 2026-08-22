@@ -68,16 +68,51 @@ class PaymentServiceTest {
     }
 
     @Test
+    void sameKeyIsRecheckedAfterAidLockForConcurrentRetry() {
+        UUID aidId = UUID.randomUUID();
+        AidRequest aid = approvedAid(aidId, UUID.randomUUID(), new BigDecimal("10.00"));
+        PaymentAttempt prior = attempt(aidId, "race-key", PaymentStatus.PROCESSING);
+        AppUser admin = new AppUser(UUID.randomUUID(), "admin@test.local", "x", UserRole.ADMIN, null, true, Instant.now());
+
+        when(attempts.findByIdempotencyKey("race-key")).thenReturn(Optional.empty(), Optional.of(prior));
+        when(current.require()).thenReturn(admin);
+        when(aids.findByIdForUpdate(aidId)).thenReturn(Optional.of(aid));
+
+        PaymentAttempt result = initiation.initiate(aidId, "race-key");
+
+        assertSame(prior, result);
+        verify(attempts, never()).existsByAidRequestIdAndStatusIn(any(), anyCollection());
+        verifyNoInteractions(provider, ledger, policy);
+    }
+
+    @Test
+    void differentConcurrentKeyIsBlockedAfterAidLockWhenActiveAttemptExists() {
+        UUID aidId = UUID.randomUUID();
+        AidRequest aid = approvedAid(aidId, UUID.randomUUID(), new BigDecimal("10.00"));
+        AppUser admin = new AppUser(UUID.randomUUID(), "admin@test.local", "x", UserRole.ADMIN, null, true, Instant.now());
+
+        when(attempts.findByIdempotencyKey("new-key")).thenReturn(Optional.empty());
+        when(current.require()).thenReturn(admin);
+        when(aids.findByIdForUpdate(aidId)).thenReturn(Optional.of(aid));
+        when(attempts.existsByAidRequestIdAndStatusIn(eq(aidId), anyCollection())).thenReturn(true);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> initiation.initiate(aidId, "new-key"));
+
+        assertEquals("Já existe tentativa ativa de pagamento para este auxílio", error.getMessage());
+        verifyNoInteractions(provider);
+    }
+
+    @Test
     void insufficientFundBlocksBeforeProviderCall() {
         UUID aidId = UUID.randomUUID();
         UUID memberId = UUID.randomUUID();
-        UUID adminId = UUID.randomUUID();
         AidRequest aid = approvedAid(aidId, memberId, new BigDecimal("100.00"));
-        AppUser admin = new AppUser(adminId, "admin@test.local", "x", UserRole.ADMIN, null, true, Instant.now());
+        AppUser admin = new AppUser(UUID.randomUUID(), "admin@test.local", "x", UserRole.ADMIN, null, true, Instant.now());
 
         when(attempts.findByIdempotencyKey("fund-check")).thenReturn(Optional.empty());
         when(current.require()).thenReturn(admin);
-        when(aids.findById(aidId)).thenReturn(Optional.of(aid));
+        when(aids.findByIdForUpdate(aidId)).thenReturn(Optional.of(aid));
         when(attempts.existsByAidRequestIdAndStatusIn(eq(aidId), anyCollection())).thenReturn(false);
         when(approvals.countByAidRequestId(aidId)).thenReturn(2L);
         when(approvals.findByAidRequestId(aidId)).thenReturn(List.of());
@@ -89,7 +124,7 @@ class PaymentServiceTest {
 
         assertEquals("Fundo insuficiente", error.getMessage());
         verifyNoInteractions(provider);
-        verify(attempts, never()).save(any());
+        verify(attempts, never()).saveAndFlush(any());
     }
 
     @Test
@@ -102,7 +137,7 @@ class PaymentServiceTest {
                 () -> webhook.handle("event-1", Instant.now().toString(), "sig", body, "sandbox-x", "SETTLED"));
 
         assertEquals("Webhook replay detectado", error.getMessage());
-        verify(attempts, never()).findByProviderReference(anyString());
+        verify(attempts, never()).findByProviderReferenceForUpdate(anyString());
         verifyNoInteractions(ledger);
     }
 
@@ -141,8 +176,8 @@ class PaymentServiceTest {
 
         when(signatures.verify(anyString(), anyString(), anyString())).thenReturn(true);
         when(webhooks.existsByEventId(anyString())).thenReturn(false);
-        when(webhooks.save(any(WebhookEvent.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(attempts.findByProviderReference("settled-ref")).thenReturn(Optional.of(payment));
+        when(webhooks.saveAndFlush(any(WebhookEvent.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(attempts.findByProviderReferenceForUpdate("settled-ref")).thenReturn(Optional.of(payment));
         when(aids.findById(aidId)).thenReturn(Optional.of(aid));
         when(ledger.append(eq(LedgerType.AID_PAYMENT), eq(new BigDecimal("-10.00")), eq(memberId), eq(aidId), anyString()))
                 .thenReturn(entry);
@@ -162,8 +197,8 @@ class PaymentServiceTest {
     private void stubAcceptedWebhook(String eventId, PaymentAttempt payment, String providerReference) {
         when(signatures.verify(anyString(), anyString(), anyString())).thenReturn(true);
         when(webhooks.existsByEventId(eventId)).thenReturn(false);
-        when(webhooks.save(any(WebhookEvent.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(attempts.findByProviderReference(providerReference)).thenReturn(Optional.of(payment));
+        when(webhooks.saveAndFlush(any(WebhookEvent.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(attempts.findByProviderReferenceForUpdate(providerReference)).thenReturn(Optional.of(payment));
     }
 
     private PaymentAttempt attempt(UUID aidId, String key, PaymentStatus status) {
