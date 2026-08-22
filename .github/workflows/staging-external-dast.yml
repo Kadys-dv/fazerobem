@@ -86,20 +86,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -sS -D evidence/external-health/health-public.headers -o /dev/null "$STAGING_BASE_URL/health"
+          curl -sS --fail --max-time 30 \
+            -D evidence/external-health/health-public.headers \
+            -o /dev/null \
+            "$STAGING_BASE_URL/health"
 
+          : > evidence/external-health/management-surface.status
           for path in actuator/prometheus actuator/metrics actuator/env; do
-            status=$(curl -sS -o /dev/null -w '%{http_code}' "$STAGING_BASE_URL/$path" || true)
+            status=$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' "$STAGING_BASE_URL/$path" || true)
             printf '%s=%s\n' "$path" "$status" >> evidence/external-health/management-surface.status
             case "$status" in
               401|403|404) ;;
               301|302|303|307|308) ;;
-              200) echo "sensitive management endpoint publicly returned HTTP 200: /$path" >&2; exit 1 ;;
-              *) echo "unexpected management endpoint status for /$path: $status" >&2; exit 1 ;;
+              200)
+                echo "sensitive management endpoint publicly returned HTTP 200: /$path" >&2
+                exit 1
+                ;;
+              *)
+                echo "unexpected management endpoint status for /$path: $status" >&2
+                exit 1
+                ;;
             esac
           done
 
-          python3 -c 'from pathlib import Path; headers=Path("evidence/external-health/health-public.headers").read_text(errors="replace").splitlines(); wanted={"strict-transport-security","x-content-type-options","content-security-policy","referrer-policy","permissions-policy","cache-control"}; selected=[]; [selected.append(f"{line.split(\":\",1)[0].strip()}: {line.split(\":\",1)[1].strip()}") for line in headers if ":" in line and line.split(":",1)[0].strip().lower() in wanted]; Path("evidence/external-health/security-headers.txt").write_text("\n".join(selected)+"\n")'
+          grep -Ei '^(strict-transport-security|x-content-type-options|content-security-policy|referrer-policy|permissions-policy|cache-control):' \
+            evidence/external-health/health-public.headers \
+            > evidence/external-health/security-headers.txt || true
 
       - name: Run OWASP ZAP baseline against real staging
         shell: bash
