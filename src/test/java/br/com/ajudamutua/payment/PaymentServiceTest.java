@@ -30,16 +30,17 @@ class PaymentServiceTest {
     @Mock CurrentUserService current;
     @Mock AidPolicyService policy;
     @Mock LedgerService ledger;
-    @Mock LedgerEntryRepository ledgerRepo;
     @Mock AuditService audit;
     @Mock PaymentProvider provider;
     @Mock WebhookSignatureService signatures;
 
-    private PaymentService service;
+    private PaymentInitiationService initiation;
+    private PaymentWebhookService webhook;
 
     @BeforeEach
     void setUp() {
-        service = new PaymentService(aids, approvals, attempts, webhooks, outbox, current, policy, ledger, ledgerRepo, audit, provider, signatures);
+        initiation = new PaymentInitiationService(aids, approvals, attempts, outbox, current, policy, ledger, audit, provider);
+        webhook = new PaymentWebhookService(aids, attempts, webhooks, outbox, ledger, audit, signatures);
     }
 
     @Test
@@ -48,7 +49,7 @@ class PaymentServiceTest {
         PaymentAttempt prior = attempt(aidId, "same-key", PaymentStatus.PROCESSING);
         when(attempts.findByIdempotencyKey("same-key")).thenReturn(Optional.of(prior));
 
-        PaymentAttempt result = service.initiate(aidId, "same-key");
+        PaymentAttempt result = initiation.initiate(aidId, "same-key");
 
         assertSame(prior, result);
         verifyNoInteractions(provider, ledger, policy, current);
@@ -60,7 +61,7 @@ class PaymentServiceTest {
         when(attempts.findByIdempotencyKey("same-key")).thenReturn(Optional.of(prior));
 
         IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> service.initiate(UUID.randomUUID(), "same-key"));
+                () -> initiation.initiate(UUID.randomUUID(), "same-key"));
 
         assertTrue(error.getMessage().contains("Idempotency-Key já usada"));
         verifyNoInteractions(provider);
@@ -84,7 +85,7 @@ class PaymentServiceTest {
         when(ledger.balance()).thenReturn(new BigDecimal("99.99"));
 
         IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> service.initiate(aidId, "fund-check"));
+                () -> initiation.initiate(aidId, "fund-check"));
 
         assertEquals("Fundo insuficiente", error.getMessage());
         verifyNoInteractions(provider);
@@ -98,7 +99,7 @@ class PaymentServiceTest {
         when(webhooks.existsByEventId("event-1")).thenReturn(true);
 
         IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> service.handleWebhook("event-1", Instant.now().toString(), "sig", body, "sandbox-x", "SETTLED"));
+                () -> webhook.handle("event-1", Instant.now().toString(), "sig", body, "sandbox-x", "SETTLED"));
 
         assertEquals("Webhook replay detectado", error.getMessage());
         verify(attempts, never()).findByProviderReference(anyString());
@@ -110,7 +111,7 @@ class PaymentServiceTest {
         PaymentAttempt payment = processingAttempt(UUID.randomUUID(), "failed-ref");
         stubAcceptedWebhook("event-failed", payment, "failed-ref");
 
-        service.handleWebhook("event-failed", Instant.now().toString(), "sig",
+        webhook.handle("event-failed", Instant.now().toString(), "sig",
                 "{\"providerReference\":\"failed-ref\",\"status\":\"FAILED\"}", "failed-ref", "FAILED");
 
         assertEquals(PaymentStatus.FAILED, payment.getStatus());
@@ -122,7 +123,7 @@ class PaymentServiceTest {
         PaymentAttempt payment = processingAttempt(UUID.randomUUID(), "unknown-ref");
         stubAcceptedWebhook("event-unknown", payment, "unknown-ref");
 
-        service.handleWebhook("event-unknown", Instant.now().toString(), "sig",
+        webhook.handle("event-unknown", Instant.now().toString(), "sig",
                 "{\"providerReference\":\"unknown-ref\",\"status\":\"PENDING_REVIEW\"}", "unknown-ref", "PENDING_REVIEW");
 
         assertEquals(PaymentStatus.RECONCILIATION_REQUIRED, payment.getStatus());
@@ -147,14 +148,14 @@ class PaymentServiceTest {
                 .thenReturn(entry);
 
         String body = "{\"providerReference\":\"settled-ref\",\"status\":\"SETTLED\"}";
-        service.handleWebhook("event-settle-1", Instant.now().toString(), "sig", body, "settled-ref", "SETTLED");
+        webhook.handle("event-settle-1", Instant.now().toString(), "sig", body, "settled-ref", "SETTLED");
 
         assertEquals(PaymentStatus.SETTLED, payment.getStatus());
         assertEquals(AidStatus.PAID, aid.getStatus());
         verify(ledger, times(1)).append(any(), any(), any(), any(), anyString());
 
         assertThrows(IllegalStateException.class,
-                () -> service.handleWebhook("event-settle-2", Instant.now().toString(), "sig", body, "settled-ref", "SETTLED"));
+                () -> webhook.handle("event-settle-2", Instant.now().toString(), "sig", body, "settled-ref", "SETTLED"));
         verify(ledger, times(1)).append(any(), any(), any(), any(), anyString());
     }
 
