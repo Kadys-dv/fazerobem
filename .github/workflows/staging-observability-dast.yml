@@ -150,11 +150,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p evidence/zap
+          sudo chown -R 1000:1000 evidence/zap
           set +e
           docker run --rm --add-host=host.docker.internal:host-gateway -v "$PWD/evidence/zap:/zap/wrk/:rw" ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t http://host.docker.internal:8080 -J zap-report.json -r zap-report.html -I -m 2
           zap_status=$?
           set -e
           test "$zap_status" -ne 3 || { echo "ZAP could not complete the scan" >&2; exit 1; }
+          sudo chown -R "$(id -u):$(id -g)" evidence/zap
           python3 - <<'PY'
           import json
           from pathlib import Path
