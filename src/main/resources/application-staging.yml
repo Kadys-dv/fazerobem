@@ -1,0 +1,40 @@
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+server:
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        secure: true
+        http-only: true
+        same-site: strict
+app:
+  crypto:
+    key-id: ${APP_CRYPTO_KEY_ID}
+    master-key-base64: ${APP_CRYPTO_MASTER_KEY_BASE64}
+  sandbox:
+    webhook-secret: ${SANDBOX_WEBHOOK_SECRET}
+  webauthn:
+    rp-name: ${WEBAUTHN_RP_NAME:Fazer o Bem Staging}
+    rp-id: ${WEBAUTHN_RP_ID}
+    allowed-origins: ${WEBAUTHN_ALLOWED_ORIGINS}
+  kms:
+    provider: ${KMS_PROVIDER}
+    aws-key-id: ${AWS_KMS_KEY_ID:}
+  documents:
+    path: ${DOCUMENTS_PATH}
+management:
+  endpoint:
+    health:
+      show-details: never
+  tracing:
+    sampling:
+      probability: ${TRACE_SAMPLE_PROBABILITY:0.25}
