@@ -64,11 +64,6 @@ class FinancialConcurrencyIntegrationTest {
 
     @BeforeEach
     void seed() {
-        jdbc.update("delete from payment_attempts");
-        jdbc.update("delete from aid_requests");
-        jdbc.update("delete from app_users");
-        jdbc.update("delete from members");
-
         memberId = UUID.randomUUID();
         aidId = UUID.randomUUID();
         adminId = UUID.randomUUID();
@@ -118,10 +113,10 @@ class FinancialConcurrencyIntegrationTest {
 
     @Test
     void databaseRejectsTwoActiveAttemptsForSameAid() {
-        insertAttempt(UUID.randomUUID(), "key-a", "READY");
+        insertAttempt(UUID.randomUUID(), "key-a-" + aidId, "READY");
 
         assertThrows(DataIntegrityViolationException.class,
-                () -> insertAttempt(UUID.randomUUID(), "key-b", "PROCESSING"));
+                () -> insertAttempt(UUID.randomUUID(), "key-b-" + aidId, "PROCESSING"));
 
         Integer count = jdbc.queryForObject(
                 "select count(*) from payment_attempts where aid_request_id = ?", Integer.class, aidId);
