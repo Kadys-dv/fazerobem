@@ -2,6 +2,8 @@
 
 Este runbook é exclusivo para **staging/sandbox**. Ele não autoriza dinheiro real.
 
+A evidência medida mais recente e a decisão formal de readiness ficam consolidadas em `docs/PRODUCTION_READINESS_EVIDENCE.md`. Em caso de divergência entre expectativa e evidência, prevalece a evidência reproduzível mais recente; pendências externas continuam `PENDING/NO-GO` até validação independente.
+
 ## Pré-condições
 
 - todos os gates da `main` verdes;
@@ -107,4 +109,10 @@ O rehearsal deve comprovar, em staging:
 - decisão de freeze/unfreeze;
 - responsáveis pelo ensaio.
 
-A execução real contra o staging alvo é requisito futuro para qualquer decisão de produção. Este runbook e o CI apenas tornam o procedimento reproduzível e verificável; não substituem o ensaio no ambiente real.
+## Evidência já obtida
+
+Os ensaios automatizados já comprovaram recuperação de objeto no Neon, restart do processo de serviço com RTO medido e DAST passivo/observabilidade em staging-profile. Esses resultados estão registrados em `docs/PRODUCTION_READINESS_EVIDENCE.md`.
+
+Eles **não** substituem o rehearsal no ambiente hospedado real, health/failover pela internet, pentest independente, validação jurídica/LGPD nem homologação contratual/compliance do provedor financeiro.
+
+A execução real contra o staging alvo continua sendo requisito para qualquer decisão de produção com dinheiro real.
