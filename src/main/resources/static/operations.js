@@ -1,4 +1,4 @@
-const state={me:null,cases:[],selectedId:null,csrf:null};
+const state={me:null,cases:[],selectedId:null,csrf:null,initialized:false};
 const $=id=>document.getElementById(id);
 const money=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v||0));
 const date=v=>v?new Intl.DateTimeFormat('pt-BR',{dateStyle:'short',timeStyle:'short'}).format(new Date(v)):'—';
@@ -17,10 +17,12 @@ async function json(url,options={}){
   return res.json();
 }
 
-function toast(message){const el=$('toast');el.textContent=message;el.classList.remove('hidden');setTimeout(()=>el.classList.add('hidden'),3200);}
+function toast(message){const el=$('toast');if(!el)return;el.textContent=message;el.classList.remove('hidden');setTimeout(()=>el.classList.add('hidden'),3200);}
 function statusLabel(s){return ({PENDING:'Em análise',APPROVED:'Aprovado',REJECTED:'Rejeitado',PAID:'Pago'})[s]||s;}
 
 async function init(){
+  if(state.initialized)return;
+  state.initialized=true;
   state.me=await json('/api/v1/auth/me');
   const allowed=['ANALYST','APPROVER','ADMIN','AUDITOR'];
   if(!state.me.authenticated||!allowed.includes(state.me.role)){location.href='/';return;}
@@ -107,4 +109,6 @@ async function act(url,body,success){
   try{await json(url,{method:'POST',body:JSON.stringify(body)});toast(success);await loadCases();await selectCase(state.selectedId);}catch(e){toast(e.message);}
 }
 
-document.addEventListener('DOMContentLoaded',init);
+function bootstrap(){init().catch(e=>{state.initialized=false;toast(e.message);});}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootstrap,{once:true});
+else bootstrap();
