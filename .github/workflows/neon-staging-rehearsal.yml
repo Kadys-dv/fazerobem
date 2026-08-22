@@ -1,0 +1,149 @@
+name: neon-staging-rehearsal
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  neon-staging-rehearsal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Validate required Neon staging secrets
+        shell: bash
+        env:
+          NEON_STAGING_JDBC_URL: ${{ secrets.NEON_STAGING_JDBC_URL }}
+          NEON_STAGING_DB_USER: ${{ secrets.NEON_STAGING_DB_USER }}
+          NEON_STAGING_DB_PASSWORD: ${{ secrets.NEON_STAGING_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$NEON_STAGING_JDBC_URL" || { echo "NEON_STAGING_JDBC_URL missing" >&2; exit 1; }
+          test -n "$NEON_STAGING_DB_USER" || { echo "NEON_STAGING_DB_USER missing" >&2; exit 1; }
+          test -n "$NEON_STAGING_DB_PASSWORD" || { echo "NEON_STAGING_DB_PASSWORD missing" >&2; exit 1; }
+          case "$NEON_STAGING_JDBC_URL" in
+            jdbc:postgresql://*sslmode=require*) ;;
+            *) echo "Neon staging JDBC URL must require TLS" >&2; exit 1 ;;
+          esac
+
+      - name: Generate ephemeral application secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_KEY_VALUE=$(openssl rand -base64 32 | tr -d '\n')
+          WEBHOOK_SECRET_VALUE=$(openssl rand -hex 32)
+          echo "::add-mask::$APP_KEY_VALUE"
+          echo "::add-mask::$WEBHOOK_SECRET_VALUE"
+          echo "APP_CRYPTO_MASTER_KEY_BASE64=$APP_KEY_VALUE" >> "$GITHUB_ENV"
+          echo "SANDBOX_WEBHOOK_SECRET=$WEBHOOK_SECRET_VALUE" >> "$GITHUB_ENV"
+
+      - name: Start application against Neon runtime-staging
+        shell: bash
+        env:
+          DB_URL: ${{ secrets.NEON_STAGING_JDBC_URL }}
+          DB_USER: ${{ secrets.NEON_STAGING_DB_USER }}
+          DB_PASSWORD: ${{ secrets.NEON_STAGING_DB_PASSWORD }}
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: '6379'
+          REDIS_PASSWORD: ''
+          APP_CRYPTO_KEY_ID: ci-neon-staging
+          KMS_PROVIDER: local
+          DOCUMENTS_PATH: /tmp/fazerobem-neon-staging-documents
+          PAYMENT_INITIATION_ENABLED: 'false'
+          WEBAUTHN_RP_NAME: Fazer o Bem Neon Staging
+          WEBAUTHN_RP_ID: staging.fazerobem.invalid
+          WEBAUTHN_ALLOWED_ORIGINS: https://staging.fazerobem.invalid
+          TRACE_SAMPLE_PROBABILITY: '1.0'
+          APP_SECURITY_MFA_REQUIRED_FOR_PRIVILEGED: 'false'
+        run: |
+          set -euo pipefail
+          mkdir -p "$DOCUMENTS_PATH"
+          nohup mvn -B spring-boot:run -Dspring-boot.run.profiles=staging > /tmp/fazerobem-neon-staging.log 2>&1 &
+          echo $! > /tmp/fazerobem-neon-staging.pid
+          ready=false
+          for i in {1..90}; do
+            if curl -fsS http://127.0.0.1:8080/api/v1/transparency >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" != "true" ]; then
+            cat /tmp/fazerobem-neon-staging.log
+            exit 1
+          fi
+
+      - name: Verify Flyway V1-V8 and financial schema
+        shell: bash
+        env:
+          DB_URL: ${{ secrets.NEON_STAGING_JDBC_URL }}
+          DB_USER: ${{ secrets.NEON_STAGING_DB_USER }}
+          DB_PASSWORD: ${{ secrets.NEON_STAGING_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import subprocess
+          import urllib.parse
+
+          jdbc = os.environ['DB_URL']
+          if not jdbc.startswith('jdbc:postgresql://'):
+              raise SystemExit('unexpected JDBC URL')
+          uri = jdbc[len('jdbc:'):]
+          parsed = urllib.parse.urlparse(uri)
+          env = os.environ.copy()
+          env['PGPASSWORD'] = os.environ['DB_PASSWORD']
+          cmd = [
+              'psql',
+              '-h', parsed.hostname,
+              '-p', str(parsed.port or 5432),
+              '-U', os.environ['DB_USER'],
+              '-d', parsed.path.lstrip('/'),
+              'sslmode=require',
+          ]
+          # psql does not accept sslmode as a positional parameter; use PGSSLMODE.
+          env['PGSSLMODE'] = 'require'
+          base = cmd[:-1]
+          checks = [
+              ("select count(*) from flyway_schema_history where success and version in ('1','2','3','4','5','6','7','8');", '8'),
+              ("select count(*) from information_schema.tables where table_schema='public';", '30'),
+              ("select count(*) from pg_indexes where schemaname='public' and indexname in ('uk_payment_settled_per_aid','uk_payment_active_per_aid','idx_ledger_created_at','idx_audit_created');", '4'),
+              ("select count(*) from ledger_chain_lock;", '1'),
+              ("select count(*) from audit_chain_lock;", '1'),
+          ]
+          for sql, expected in checks:
+              out = subprocess.check_output(base + ['-Atc', sql], env=env, text=True).strip()
+              if out != expected:
+                  raise SystemExit(f'check failed: expected {expected}, got {out}')
+          PY
+
+      - name: Show application logs on failure
+        if: failure()
+        run: cat /tmp/fazerobem-neon-staging.log || true
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          test -f /tmp/fazerobem-neon-staging.pid && kill "$(cat /tmp/fazerobem-neon-staging.pid)" || true
+          rm -rf /tmp/fazerobem-neon-staging-documents
