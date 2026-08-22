@@ -1,0 +1,31 @@
+name: container-staging
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  container-staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build staging image
+        run: docker build --pull -t fazerobem-staging:${{ github.sha }} .
+      - name: Inspect runtime security posture
+        run: |
+          set -euo pipefail
+          uid="$(docker run --rm --entrypoint sh fazerobem-staging:${{ github.sha }} -c 'id -u')"
+          test "$uid" != "0"
+          profile="$(docker image inspect fazerobem-staging:${{ github.sha }} --format '{{range .Config.Env}}{{println .}}{{end}}' | grep '^SPRING_PROFILES_ACTIVE=' || true)"
+          test "$profile" = "SPRING_PROFILES_ACTIVE=staging"
+      - name: Prove payment initiation stays fail-closed by default
+        run: |
+          set -euo pipefail
+          if docker image inspect fazerobem-staging:${{ github.sha }} --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -q '^PAYMENT_INITIATION_ENABLED=true$'; then
+            echo 'Payment initiation must never be enabled in the staging image.' >&2
+            exit 1
+          fi

@@ -9,6 +9,8 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD}
 server:
+  address: 0.0.0.0
+  port: ${PORT:8080}
   forward-headers-strategy: framework
   servlet:
     session:
