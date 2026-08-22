@@ -31,6 +31,8 @@ app:
     aws-key-id: ${AWS_KMS_KEY_ID:}
   documents:
     path: ${DOCUMENTS_PATH}
+  payments:
+    initiation-enabled: ${PAYMENT_INITIATION_ENABLED:false}
 management:
   endpoint:
     health:
