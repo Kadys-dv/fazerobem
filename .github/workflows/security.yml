@@ -132,14 +132,12 @@ jobs:
         env:
           DB_URL: jdbc:postgresql://localhost:5432/ajuda_mutua_ci
           DB_USER: ajuda_ci
-          DB_PASSWORD: ${{ env.CI_DB_PASSWORD }}
           REDIS_HOST: localhost
           REDIS_PORT: '6379'
-          APP_CRYPTO_MASTER_KEY_BASE64: ${{ env.APP_CRYPTO_MASTER_KEY_BASE64 }}
-          SANDBOX_WEBHOOK_SECRET: ${{ env.SANDBOX_WEBHOOK_SECRET }}
           KMS_PROVIDER: local
           OTEL_EXPORTER_OTLP_ENDPOINT: http://localhost:4318/v1/traces
         run: |
+          export DB_PASSWORD="$CI_DB_PASSWORD"
           nohup mvn -B spring-boot:run -Dspring-boot.run.profiles=dev > /tmp/fazerobem-app.log 2>&1 &
           echo $! > /tmp/fazerobem-app.pid
       - name: Wait for application
