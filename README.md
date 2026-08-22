@@ -22,41 +22,46 @@ Plataforma de **ajuda mútua e fundo comunitário transparente**, construída pa
 
 ## Princípios do projeto
 
-O fluxo financeiro é deliberadamente simples:
-
 ```text
 contribuição voluntária
         ↓
 fundo comunitário
         ↓
-pedido de auxílio
+pedido de auxílio + documentos
         ↓
 elegibilidade objetiva
         ↓
-análise antifraude
+análise + antifraude
         ↓
-dupla aprovação
+dupla aprovação independente
         ↓
-pagamento sandbox
+admin inicia pagamento sandbox
+        ↓
+webhook HMAC confirma liquidação
+        ↓
+PAID
         ↓
 ledger + auditoria + transparência
 ```
 
-Não existem:
-
-- juros, ROI ou rendimento;
-- planos de investimento;
-- comissão por indicação;
-- recompensa por recrutamento;
-- fila de retorno;
-- promessa de restituição de contribuição;
-- prioridade baseada no quanto alguém doou.
+Não existem juros, ROI, planos de investimento, comissão por indicação, recompensa por recrutamento, fila de retorno, promessa de restituição de contribuição ou prioridade baseada no quanto alguém doou.
 
 ## Estado atual — Fase 7
 
-A versão atual está em **validation & pentest readiness** e permanece sem dinheiro real.
+A versão atual está em **validation, financial hardening & pentest readiness** e permanece sem dinheiro real.
 
-Principais controles já previstos no código:
+O fluxo sandbox completo já é validado de ponta a ponta:
+
+- `MEMBER`: contribuição sandbox, pedido e documento;
+- `ANALYST`: parecer e antifraude;
+- dois `APPROVER` distintos: dupla aprovação;
+- `ADMIN`: inicia a tentativa de pagamento;
+- provedor sandbox: confirma por webhook HMAC;
+- sistema: `PAID`, lançamento `AID_PAYMENT` no ledger e trilha de auditoria.
+
+A interface administrativa não possui ação para forçar `PAID`: a liquidação depende da confirmação autenticada do provedor sandbox.
+
+### Controles implementados
 
 - ledger financeiro encadeado por SHA-256;
 - trilha de auditoria encadeada;
@@ -68,43 +73,51 @@ Principais controles já previstos no código:
 - WebAuthn/passkeys e TOTP para perfis privilegiados;
 - Redis para controles distribuídos;
 - idempotência de pagamentos;
-- webhook HMAC com proteção contra replay;
+- webhook HMAC com proteção contra replay e janela temporal;
+- estados de pagamento `PROCESSING`, `SETTLED`, `FAILED` e `RECONCILIATION_REQUIRED`;
 - reconciliação explícita de pagamentos incertos;
 - relatórios públicos assinados com Ed25519;
 - recuperação administrativa com dual control;
 - Testcontainers PostgreSQL + Redis;
-- base E2E Playwright com autenticador WebAuthn virtual;
+- E2E Playwright com autenticador WebAuthn virtual;
+- E2E live do fluxo completo até `PAID`, ledger e auditoria;
 - scripts de backup, restore e verificação de integridade;
-- SBOM CycloneDX, OWASP Dependency-Check e CodeQL.
+- SBOM CycloneDX, OWASP Dependency-Check, secret scan e CodeQL.
+
+### Hardening financeiro em andamento
+
+A etapa atual valida os caminhos negativos antes de qualquer integração real:
+
+- assinatura HMAC inválida;
+- corpo de webhook adulterado;
+- webhook expirado ou fora da tolerância temporal;
+- replay de `eventId`;
+- `FAILED`;
+- `RECONCILIATION_REQUIRED`;
+- repetição de iniciação com a mesma chave de idempotência;
+- prevenção de dupla liquidação/débito duplicado;
+- saldo insuficiente;
+- recuperação e reconciliação administrativa auditável.
+
+Nenhum desses testes utiliza dinheiro real.
 
 ## Executar localmente
 
-### 1. Infraestrutura
-
 ```bash
 docker compose up -d
-```
-
-### 2. Aplicação
-
-```bash
 mvn spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
-Aplicação:
+Aplicação: `http://localhost:8080`
 
-```text
-http://localhost:8080
-```
-
-> O profile `dev` é apenas para desenvolvimento. Nunca use suas credenciais/chaves padrão em produção.
+> O profile `dev` é apenas para desenvolvimento. Nunca use credenciais ou chaves de desenvolvimento em produção.
 
 ## Segurança
 
 Antes de qualquer piloto com recursos reais, o projeto exige no mínimo:
 
 - `mvn clean verify` reproduzível;
-- execução completa dos E2E;
+- execução completa dos E2E positivos e negativos;
 - pentest independente;
 - restauração de backup testada;
 - KMS/secret manager real;
