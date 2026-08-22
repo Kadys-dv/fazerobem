@@ -17,7 +17,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import java.math.BigDecimal;
-import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -67,13 +68,14 @@ class FinancialConcurrencyIntegrationTest {
         memberId = UUID.randomUUID();
         aidId = UUID.randomUUID();
         adminId = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
         jdbc.update("insert into members(id,name,email,status,joined_at,kyc_status) values (?,?,?,?,?,?)",
-                memberId, "Concurrency Member", "member-" + memberId + "@test.local", "ACTIVE", Instant.now(), "VERIFIED");
+                memberId, "Concurrency Member", "member-" + memberId + "@test.local", "ACTIVE", now, "VERIFIED");
         jdbc.update("insert into app_users(id,email,password_hash,role,enabled,created_at) values (?,?,?,?,?,?)",
-                adminId, "admin-" + adminId + "@test.local", "test", "ADMIN", true, Instant.now());
+                adminId, "admin-" + adminId + "@test.local", "test", "ADMIN", true, now);
         jdbc.update("insert into aid_requests(id,member_id,amount,reason,status,created_at,category,emergency,version) values (?,?,?,?,?,?,?,?,?)",
-                aidId, memberId, new BigDecimal("10.00"), "concurrency test", "APPROVED", Instant.now(), "HEALTH", true, 0L);
+                aidId, memberId, new BigDecimal("10.00"), "concurrency test", "APPROVED", now, "HEALTH", true, 0L);
     }
 
     @Test
@@ -124,8 +126,9 @@ class FinancialConcurrencyIntegrationTest {
     }
 
     private void insertAttempt(UUID paymentId, String key, String status) {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         jdbc.update("insert into payment_attempts(id,aid_request_id,idempotency_key,provider,status,amount,initiated_by_user_id,created_at,updated_at,version) values (?,?,?,?,?,?,?,?,?,?)",
-                paymentId, aidId, key, "SANDBOX", status, new BigDecimal("10.00"), adminId, Instant.now(), Instant.now(), 0L);
+                paymentId, aidId, key, "SANDBOX", status, new BigDecimal("10.00"), adminId, now, now, 0L);
     }
 
     private static void await(CountDownLatch latch) {
