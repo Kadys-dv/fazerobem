@@ -50,6 +50,7 @@ async function openOperationalCase(page: Page, aidId: string, reason: string, ro
     message: `operations.js did not execute; page errors: ${pageErrors.join(' | ') || 'none'}`
   }).toBe('function');
   await expect(page.locator('#operatorIdentity'), `panel init failed; page errors: ${pageErrors.join(' | ') || 'none'}`).toContainText(role, { timeout: 15_000 });
+  await page.locator('#statusFilter').selectOption('ALL');
   await expect.poll(async () => Number(await page.locator('#caseCount').textContent()), { timeout: 15_000 }).toBeGreaterThan(0);
   const item = page.locator(`.case-item[data-id="${aidId}"]`);
   await expect(item).toBeVisible({ timeout: 15_000 });
