@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('member completes onboarding, contributes in sandbox and requests aid', async ({ page }) => {
+test('member onboarding is enforced server-side before sandbox contribution and aid', async ({ page }) => {
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const email = `member-${suffix}@example.test`;
 
@@ -18,6 +18,23 @@ test('member completes onboarding, contributes in sandbox and requests aid', asy
   await expect(page.locator('#memberArea')).toBeVisible();
   await expect(page.locator('#memberRole')).toHaveText('MEMBER');
   await expect(page.locator('#onboardingDialog')).toBeVisible();
+
+  const bypass = await page.evaluate(async () => {
+    const me = await fetch('/api/v1/auth/me', { credentials: 'same-origin' }).then(r => r.json());
+    const csrf = await fetch('/api/v1/auth/csrf', { credentials: 'same-origin' }).then(r => r.json());
+    const response = await fetch('/api/v1/contributions', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        [csrf.headerName]: csrf.token,
+      },
+      body: JSON.stringify({ memberId: me.memberId, amount: '5.00' }),
+    });
+    return { status: response.status, body: await response.json() };
+  });
+  expect(bypass.status).toBe(400);
+  expect(String(bypass.body.error)).toContain('Primeiro acesso pendente');
 
   await page.locator('#acceptTerms').check();
   await page.locator('#acceptPrivacy').check();
