@@ -84,6 +84,15 @@ O NO-GO permanece até existirem evidências externas verificáveis para as quat
 - validação jurídica, contábil, regulatória e LGPD;
 - homologação contratual/compliance do provedor financeiro.
 
+A execução e o registro dessas evidências estão definidos em:
+
+- [`docs/PHASE_9_EXTERNAL_READINESS_EXECUTION.md`](docs/PHASE_9_EXTERNAL_READINESS_EXECUTION.md);
+- [`docs/PHASE_9_EXTERNAL_EVIDENCE_REGISTRY.md`](docs/PHASE_9_EXTERNAL_EVIDENCE_REGISTRY.md);
+- [`docs/SLO_RTO_RPO.md`](docs/SLO_RTO_RPO.md);
+- [`docs/PENTEST_EXTERNAL_SCOPE.md`](docs/PENTEST_EXTERNAL_SCOPE.md);
+- [`docs/EXTERNAL_VALIDATION_CHECKLIST.md`](docs/EXTERNAL_VALIDATION_CHECKLIST.md);
+- [`docs/RELEASE_CANDIDATE_GATE.md`](docs/RELEASE_CANDIDATE_GATE.md).
+
 ## Controles implementados
 
 - ledger financeiro encadeado por SHA-256;
