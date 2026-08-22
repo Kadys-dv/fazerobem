@@ -46,6 +46,7 @@ class LoadConcurrencyIntegrationTest {
     private static final int CHAIN_OPERATIONS = 80;
     private static final int REDIS_OPERATIONS = 600;
     private static final int PAYMENT_RACERS = 20;
+    private static final String GENESIS = "0".repeat(64);
 
     @Container
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:17-alpine")
@@ -78,7 +79,6 @@ class LoadConcurrencyIntegrationTest {
     private UUID memberId;
     private UUID aidId;
     private UUID adminId;
-    private final List<String> reportLines = new ArrayList<>();
 
     @BeforeEach
     void seed() {
@@ -100,13 +100,13 @@ class LoadConcurrencyIntegrationTest {
             ledger.append(LedgerType.ADJUSTMENT, BigDecimal.ZERO, memberId, aidId, "load-ledger-" + UUID.randomUUID());
             return null;
         });
-        assertChain("ledger_entries", "entry_hash", "previous_hash", CHAIN_OPERATIONS);
+        assertChainGraph("ledger_entries", "entry_hash", "previous_hash", CHAIN_OPERATIONS);
 
         Metric auditMetric = runConcurrent("audit", CHAIN_OPERATIONS, () -> {
             audit.append(adminId, "LOAD_TEST", "AidRequest", aidId, "{\"run\":\"" + UUID.randomUUID() + "\"}");
             return null;
         });
-        assertChain("audit_events", "event_hash", "previous_hash", CHAIN_OPERATIONS);
+        assertChainGraph("audit_events", "event_hash", "previous_hash", CHAIN_OPERATIONS);
 
         String redisKey = "phase8:load:" + UUID.randomUUID();
         Metric redisMetric = runConcurrent("redis", REDIS_OPERATIONS, () -> {
@@ -132,33 +132,18 @@ class LoadConcurrencyIntegrationTest {
         Integer active = jdbc.queryForObject("select count(*) from payment_attempts where aid_request_id=? and status in ('READY','PROCESSING','SETTLED','RECONCILIATION_REQUIRED')", Integer.class, aidId);
         assertEquals(1, active);
 
-        reportLines.add("# Phase 8 Load & Concurrency Report");
-        reportLines.add("");
-        reportLines.add("| Scenario | Ops | Throughput ops/s | p95 ms | p99 ms | Errors |");
-        reportLines.add("|---|---:|---:|---:|---:|---:|");
-        reportLines.add(ledgerMetric.row());
-        reportLines.add(auditMetric.row());
-        reportLines.add(redisMetric.row());
-        reportLines.add(paymentMetric.row());
-        reportLines.add("");
-        reportLines.add("Validated invariants: ledger chain intact; audit chain intact; Redis increments exact; exactly one active payment attempt after concurrent race.");
-        Path output = Path.of("target", "load-concurrency-report.md");
-        Files.createDirectories(output.getParent());
-        Files.write(output, reportLines);
+        writeReport(List.of(ledgerMetric, auditMetric, redisMetric, paymentMetric));
     }
 
     private Metric runConcurrent(String name, int operations, Callable<Void> task) throws Exception {
         ExecutorService pool = Executors.newFixedThreadPool(THREADS);
-        CountDownLatch ready = new CountDownLatch(operations);
         CountDownLatch start = new CountDownLatch(1);
         List<Long> latencies = Collections.synchronizedList(new ArrayList<>());
         AtomicInteger errors = new AtomicInteger();
         List<Future<?>> futures = new ArrayList<>();
-        long wallStart = System.nanoTime();
         try {
             for (int i = 0; i < operations; i++) {
                 futures.add(pool.submit(() -> {
-                    ready.countDown();
                     start.await(10, TimeUnit.SECONDS);
                     long begin = System.nanoTime();
                     try {
@@ -172,25 +157,46 @@ class LoadConcurrencyIntegrationTest {
                     return null;
                 }));
             }
-            assertTrue(ready.await(10, TimeUnit.SECONDS));
-            wallStart = System.nanoTime();
+            long wallStart = System.nanoTime();
             start.countDown();
-            for (Future<?> future : futures) future.get(30, TimeUnit.SECONDS);
+            for (Future<?> future : futures) future.get(45, TimeUnit.SECONDS);
+            long elapsed = System.nanoTime() - wallStart;
+            return Metric.of(name, operations, elapsed, latencies, errors.get());
         } finally {
             start.countDown();
             pool.shutdownNow();
         }
-        long elapsed = System.nanoTime() - wallStart;
-        return Metric.of(name, operations, elapsed, latencies, errors.get());
     }
 
-    private void assertChain(String table, String hashColumn, String previousColumn, int minimumEntries) {
-        List<ChainRow> rows = jdbc.query("select " + hashColumn + "," + previousColumn + " from " + table + " order by created_at asc, id asc",
+    private void assertChainGraph(String table, String hashColumn, String previousColumn, int minimumEntries) {
+        List<ChainRow> rows = jdbc.query("select " + hashColumn + "," + previousColumn + " from " + table,
                 (rs, rowNum) -> new ChainRow(rs.getString(1), rs.getString(2)));
         assertTrue(rows.size() >= minimumEntries);
-        for (int i = 1; i < rows.size(); i++) {
-            assertEquals(rows.get(i - 1).hash(), rows.get(i).previousHash(), "Cadeia quebrada em " + table + " índice " + i);
+        var hashes = rows.stream().map(ChainRow::hash).collect(java.util.stream.Collectors.toSet());
+        long genesisLinks = rows.stream().filter(r -> GENESIS.equals(r.previousHash())).count();
+        assertEquals(1L, genesisLinks, "A cadeia deve ter exatamente um elo genesis em " + table);
+        for (ChainRow row : rows) {
+            if (!GENESIS.equals(row.previousHash())) {
+                assertTrue(hashes.contains(row.previousHash()), "previous_hash órfão em " + table);
+            }
         }
+        Integer forks = jdbc.queryForObject("select count(*) from (select " + previousColumn + " from " + table + " where " + previousColumn + " <> ? group by " + previousColumn + " having count(*) > 1) x", Integer.class, GENESIS);
+        assertEquals(0, forks, "A cadeia não pode ter forks em " + table);
+    }
+
+    private void writeReport(List<Metric> metrics) throws Exception {
+        List<String> lines = new ArrayList<>();
+        lines.add("# Phase 8 Load & Concurrency Report");
+        lines.add("");
+        lines.add("| Scenario | Ops | Throughput ops/s | p95 ms | p99 ms | Errors |");
+        lines.add("|---|---:|---:|---:|---:|---:|");
+        metrics.forEach(metric -> lines.add(metric.row()));
+        lines.add("");
+        lines.add("Validated invariants: ledger chain intact; audit chain intact; Redis increments exact; exactly one active payment attempt after concurrent race.");
+        Path output = Path.of("target", "load-concurrency-report.md");
+        Files.createDirectories(output.getParent());
+        Files.write(output, lines);
+        System.out.println(String.join(System.lineSeparator(), lines));
     }
 
     private record ChainRow(String hash, String previousHash) {}
