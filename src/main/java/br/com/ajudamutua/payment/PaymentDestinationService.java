@@ -35,16 +35,19 @@ public class PaymentDestinationService {
         String ciphertext = protector.encrypt(normalized);
         String fingerprint = sha256(normalized);
         String masked = mask(keyType, normalized);
+        String keyId = protector.keyId();
 
-        PaymentDestination entity = destinations.findByMemberId(memberId)
-                .orElseGet(() -> new PaymentDestination(
-                        UUID.randomUUID(), memberId,
-                        PaymentDestination.DestinationType.PIX, keyType,
-                        ciphertext, fingerprint, masked, protector.keyId(),
-                        true, Instant.now()));
-
-        if (entity.getId() != null && destinations.findByMemberId(memberId).isPresent()) {
-            entity.replace(keyType, ciphertext, fingerprint, masked, protector.keyId());
+        var existing = destinations.findByMemberId(memberId);
+        PaymentDestination entity;
+        if (existing.isPresent()) {
+            entity = existing.get();
+            entity.replace(keyType, ciphertext, fingerprint, masked, keyId);
+        } else {
+            entity = new PaymentDestination(
+                    UUID.randomUUID(), memberId,
+                    PaymentDestination.DestinationType.PIX, keyType,
+                    ciphertext, fingerprint, masked, keyId,
+                    true, Instant.now());
         }
         return destinations.save(entity);
     }
