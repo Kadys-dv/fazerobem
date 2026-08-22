@@ -2,6 +2,9 @@ name: staging-service-rehearsal
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - fix/staging-rehearsal-failures
 
 permissions:
   contents: read
@@ -46,6 +49,13 @@ jobs:
             *) echo "Neon staging JDBC URL must require TLS" >&2; exit 1 ;;
           esac
 
+      - name: Build executable jar
+        shell: bash
+        run: |
+          set -euo pipefail
+          mvn -B -DskipTests package
+          test -f target/ajuda-mutua-community-0.1.0.jar
+
       - name: Generate stable ephemeral rehearsal secrets
         shell: bash
         run: |
@@ -60,6 +70,7 @@ jobs:
       - name: Define service environment
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p /tmp/fazerobem-service-rehearsal-documents evidence
           cat > /tmp/start-staging-service.sh <<'SH'
           #!/usr/bin/env bash
@@ -82,7 +93,7 @@ jobs:
           export TRACE_SAMPLE_PROBABILITY=1.0
           export APP_SECURITY_MFA_REQUIRED_FOR_PRIVILEGED=false
           export MANAGEMENT_PORT=18081
-          nohup mvn -B spring-boot:run -Dspring-boot.run.profiles=staging > /tmp/staging-service-rehearsal.log 2>&1 &
+          nohup java -jar target/ajuda-mutua-community-0.1.0.jar --spring.profiles.active=staging > /tmp/staging-service-rehearsal.log 2>&1 &
           echo $! > /tmp/staging-service-rehearsal.pid
           SH
           chmod 700 /tmp/start-staging-service.sh
@@ -102,7 +113,13 @@ jobs:
             sleep 2
           done
           test "$ready" = true || { cat /tmp/staging-service-rehearsal.log; exit 1; }
-          curl -fsS http://127.0.0.1:18081/actuator/health | grep -q '"UP"'
+          status=$(curl -sS -D /tmp/baseline-health.headers -o /tmp/baseline-health.body -w '%{http_code}' http://127.0.0.1:18081/actuator/health || true)
+          case "$status" in
+            200) grep -q '"status":"UP"' /tmp/baseline-health.body ;;
+            302) grep -Eiq '^location:.*login' /tmp/baseline-health.headers ;;
+            401|403) ;;
+            *) echo "unexpected baseline health status: $status" >&2; exit 1 ;;
+          esac
 
       - name: Simulate service outage
         shell: bash
@@ -110,21 +127,24 @@ jobs:
           set -euo pipefail
           INCIDENT_EPOCH=$(date +%s)
           echo "INCIDENT_EPOCH=$INCIDENT_EPOCH" >> "$GITHUB_ENV"
-          kill "$(cat /tmp/staging-service-rehearsal.pid)"
+          pid=$(cat /tmp/staging-service-rehearsal.pid)
+          kill "$pid"
           for i in {1..30}; do
-            if ! curl -fsS http://127.0.0.1:8080/api/v1/transparency >/dev/null 2>&1; then
+            if ! kill -0 "$pid" 2>/dev/null && ! curl -fsS http://127.0.0.1:8080/api/v1/transparency >/dev/null 2>&1; then
               echo "outage_confirmed=true" >> "$GITHUB_ENV"
               exit 0
             fi
             sleep 1
           done
           echo "service did not become unavailable after termination" >&2
+          ps -ef | grep ajuda-mutua-community || true
           exit 1
 
       - name: Restart service and measure recovery
         shell: bash
         run: |
           set -euo pipefail
+          : > /tmp/staging-service-rehearsal.log
           /tmp/start-staging-service.sh
           recovered=false
           for i in {1..90}; do
@@ -150,7 +170,14 @@ jobs:
           DB_PASSWORD: ${{ secrets.NEON_STAGING_DB_PASSWORD }}
         run: |
           set -euo pipefail
-          curl -fsS http://127.0.0.1:18081/actuator/health -o evidence/post-recovery-health.json
+          status=$(curl -sS -D evidence/post-recovery-health.headers -o evidence/post-recovery-health.body -w '%{http_code}' http://127.0.0.1:18081/actuator/health || true)
+          printf '%s\n' "$status" > evidence/post-recovery-health.status
+          case "$status" in
+            200) grep -q '"status":"UP"' evidence/post-recovery-health.body ;;
+            302) grep -Eiq '^location:.*login' evidence/post-recovery-health.headers ;;
+            401|403) ;;
+            *) echo "unexpected post-recovery health status: $status" >&2; exit 1 ;;
+          esac
           docker run --rm --network host \
             -e PGPASSWORD="$DB_PASSWORD" -e PGSSLMODE=require postgres:18-alpine \
             psql "${DB_URL#jdbc:}" -U "$DB_USER" -Atc \
@@ -194,5 +221,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          test -f /tmp/staging-service-rehearsal.pid && kill "$(cat /tmp/staging-service-rehearsal.pid)" || true
+          if test -f /tmp/staging-service-rehearsal.pid; then
+            kill "$(cat /tmp/staging-service-rehearsal.pid)" 2>/dev/null || true
+          fi
           rm -rf /tmp/fazerobem-service-rehearsal-documents
