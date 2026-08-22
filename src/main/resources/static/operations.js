@@ -43,6 +43,7 @@ function bind(){
   $('approvalForm').addEventListener('submit',submitApproval);
   $('rejectionForm').addEventListener('submit',submitRejection);
   $('paymentForm').addEventListener('submit',submitPayment);
+  $('reconciliationForm').addEventListener('submit',submitReconciliationNote);
 }
 
 async function loadCases(){
@@ -101,6 +102,9 @@ async function loadPayments(aidId,aidStatus){
   const active=rows.some(x=>['READY','PROCESSING','SETTLED','RECONCILIATION_REQUIRED'].includes(x.status));
   $('paymentForm').classList.toggle('hidden',state.me.role!=='ADMIN');
   $('initiatePaymentButton').disabled=state.me.role!=='ADMIN'||aidStatus!=='APPROVED'||active;
+  const recon=rows.find(x=>x.status==='RECONCILIATION_REQUIRED');
+  $('reconciliationForm').classList.toggle('hidden',state.me.role!=='ADMIN'||!recon);
+  $('reconciliationPaymentId').value=recon?.id||'';
 }
 
 function historyHtml(d){
@@ -125,13 +129,30 @@ async function submitPayment(ev){
   try{
     const key=`ops-${state.selectedId}`;
     await json(`/api/v1/payments/${state.selectedId}/initiate`,{method:'POST',headers:{'Idempotency-Key':key}});
-    toast('Pagamento sandbox iniciado');
     await loadCases();
     await selectCase(state.selectedId);
+    toast('Pagamento sandbox iniciado');
+  }catch(e){toast(e.message);}
+}
+async function submitReconciliationNote(ev){
+  ev.preventDefault();
+  const paymentId=$('reconciliationPaymentId').value;
+  const note=$('reconciliationNote').value.trim();
+  if(!paymentId||!note)return;
+  try{
+    await json(`/api/v1/payments/attempts/${encodeURIComponent(paymentId)}/reconciliation-note`,{method:'POST',body:JSON.stringify({note})});
+    $('reconciliationNote').value='';
+    await selectCase(state.selectedId,false);
+    toast('Nota de reconciliação registrada; status mantido');
   }catch(e){toast(e.message);}
 }
 async function act(url,body,success){
-  try{await json(url,{method:'POST',body:JSON.stringify(body)});toast(success);await loadCases();await selectCase(state.selectedId);}catch(e){toast(e.message);}
+  try{
+    await json(url,{method:'POST',body:JSON.stringify(body)});
+    await loadCases();
+    await selectCase(state.selectedId);
+    toast(success);
+  }catch(e){toast(e.message);}
 }
 
 function bootstrap(){init().catch(e=>{state.initialized=false;toast(e.message);});}

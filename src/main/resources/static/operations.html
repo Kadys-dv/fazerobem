@@ -14,20 +14,20 @@
       <span><strong>Fazer o Bem</strong><small>Painel operacional</small></span>
     </a>
     <div class="top-actions">
-      <span id="operatorIdentity" class="operator-identity"></span>
+      <span id="operatorIdentity" class="operator-identity" aria-live="polite"></span>
       <a class="ghost" href="/">Área principal</a>
     </div>
   </header>
 
-  <main class="ops-main">
-    <section class="ops-header">
+  <main class="ops-main" id="mainContent">
+    <section class="ops-header" aria-labelledby="opsTitle">
       <div>
         <span class="eyebrow">Governança de auxílio</span>
-        <h1>Fila operacional</h1>
+        <h1 id="opsTitle">Fila operacional</h1>
         <p>Analise elegibilidade, documentos, risco e decisões sem alterar a trilha histórica do caso.</p>
       </div>
       <div class="ops-filters">
-        <label>Status
+        <label for="statusFilter">Status
           <select id="statusFilter">
             <option value="ALL">Todos</option>
             <option value="PENDING" selected>Pendentes</option>
@@ -41,12 +41,12 @@
     </section>
 
     <section class="ops-grid">
-      <aside class="case-list-panel">
-        <div class="panel-title"><strong>Solicitações</strong><span id="caseCount">0</span></div>
+      <aside class="case-list-panel" aria-label="Lista de solicitações">
+        <div class="panel-title"><strong>Solicitações</strong><span id="caseCount" aria-live="polite">0</span></div>
         <div id="caseList" class="case-list"></div>
       </aside>
 
-      <section id="caseWorkspace" class="case-workspace empty-state">
+      <section id="caseWorkspace" class="case-workspace empty-state" aria-live="polite">
         <div id="emptyCase">
           <h2>Selecione um pedido</h2>
           <p>Os detalhes operacionais e a trilha de decisão aparecem aqui.</p>
@@ -63,87 +63,34 @@
           </div>
 
           <div class="detail-grid">
-            <article class="ops-card">
-              <h3>Motivo</h3>
-              <p id="caseReason"></p>
-            </article>
-            <article class="ops-card">
-              <h3>Elegibilidade</h3>
-              <div id="eligibilitySummary"></div>
-            </article>
+            <article class="ops-card"><h3>Motivo</h3><p id="caseReason"></p></article>
+            <article class="ops-card"><h3>Elegibilidade</h3><div id="eligibilitySummary"></div></article>
           </div>
 
-          <article class="ops-card">
-            <div class="panel-title"><strong>Documentos protegidos</strong><span id="documentCount">0</span></div>
-            <div id="documentList" class="timeline"></div>
-          </article>
-
-          <article class="ops-card">
-            <h3>Histórico do caso</h3>
-            <div id="historyList" class="timeline"></div>
-          </article>
+          <article class="ops-card"><div class="panel-title"><strong>Documentos protegidos</strong><span id="documentCount">0</span></div><div id="documentList" class="timeline"></div></article>
+          <article class="ops-card"><h3>Histórico do caso</h3><div id="historyList" class="timeline"></div></article>
 
           <section id="analystActions" class="role-actions hidden">
-            <article class="ops-card">
-              <h3>Parecer do analista</h3>
-              <form id="analysisForm">
-                <label>Parecer
-                  <textarea id="analysisOpinion" maxlength="1000" required></textarea>
-                </label>
-                <button class="primary" type="submit">Registrar parecer</button>
-              </form>
-            </article>
-
-            <article class="ops-card">
-              <h3>Triagem antifraude</h3>
-              <form id="fraudForm" class="form-grid">
-                <label>Status
-                  <select id="fraudStatus" required>
-                    <option value="CLEARED">Liberado</option>
-                    <option value="REVIEW_REQUIRED">Revisão necessária</option>
-                    <option value="BLOCKED">Bloqueado</option>
-                  </select>
-                </label>
-                <label>Risco (0–100)
-                  <input id="riskScore" type="number" min="0" max="100" value="0" required>
-                </label>
-                <label class="wide">Sinais/flags
-                  <textarea id="fraudFlags" maxlength="1000"></textarea>
-                </label>
-                <label class="wide">Nota
-                  <textarea id="fraudNote" maxlength="1000" required></textarea>
-                </label>
-                <button class="primary" type="submit">Concluir triagem</button>
-              </form>
-            </article>
+            <article class="ops-card"><h3>Parecer do analista</h3><form id="analysisForm"><label for="analysisOpinion">Parecer<textarea id="analysisOpinion" maxlength="1000" required></textarea></label><button class="primary" type="submit">Registrar parecer</button></form></article>
+            <article class="ops-card"><h3>Triagem antifraude</h3><form id="fraudForm" class="form-grid"><label for="fraudStatus">Status<select id="fraudStatus" required><option value="CLEARED">Liberado</option><option value="REVIEW_REQUIRED">Revisão necessária</option><option value="BLOCKED">Bloqueado</option></select></label><label for="riskScore">Risco (0–100)<input id="riskScore" type="number" min="0" max="100" value="0" required></label><label class="wide" for="fraudFlags">Sinais/flags<textarea id="fraudFlags" maxlength="1000"></textarea></label><label class="wide" for="fraudNote">Nota<textarea id="fraudNote" maxlength="1000" required></textarea></label><button class="primary" type="submit">Concluir triagem</button></form></article>
           </section>
 
-          <section id="approverActions" class="role-actions hidden">
-            <article class="ops-card">
-              <h3>Decisão do aprovador</h3>
-              <form id="approvalForm">
-                <label>Nota de aprovação
-                  <textarea id="approvalNote" maxlength="500" required></textarea>
-                </label>
-                <button class="primary" type="submit">Registrar aprovação</button>
-              </form>
-              <form id="rejectionForm" class="reject-form">
-                <label>Motivo da rejeição
-                  <textarea id="rejectionNote" maxlength="500" required></textarea>
-                </label>
-                <button class="danger-button" type="submit">Rejeitar pedido</button>
-              </form>
-            </article>
-          </section>
+          <section id="approverActions" class="role-actions hidden"><article class="ops-card"><h3>Decisão do aprovador</h3><form id="approvalForm"><label for="approvalNote">Nota de aprovação<textarea id="approvalNote" maxlength="500" required></textarea></label><button class="primary" type="submit">Registrar aprovação</button></form><form id="rejectionForm" class="reject-form"><label for="rejectionNote">Motivo da rejeição<textarea id="rejectionNote" maxlength="500" required></textarea></label><button class="danger-button" type="submit">Rejeitar pedido</button></form></article></section>
 
           <section id="paymentActions" class="role-actions hidden">
             <article class="ops-card">
               <div class="panel-title"><strong>Pagamento sandbox</strong><span id="paymentCount">0</span></div>
               <p>O admin apenas inicia a tentativa. A liquidação é confirmada exclusivamente por webhook assinado do provedor sandbox.</p>
-              <form id="paymentForm" class="hidden">
-                <button id="initiatePaymentButton" class="primary" type="submit">Iniciar pagamento sandbox</button>
-              </form>
+              <form id="paymentForm" class="hidden"><button id="initiatePaymentButton" class="primary" type="submit">Iniciar pagamento sandbox</button></form>
               <div id="paymentList" class="timeline"></div>
+              <form id="reconciliationForm" class="reconciliation-form hidden">
+                <label for="reconciliationNote">Nota operacional de reconciliação
+                  <textarea id="reconciliationNote" maxlength="500" required placeholder="Registre o que foi verificado. Esta ação não liquida o pagamento."></textarea>
+                </label>
+                <input id="reconciliationPaymentId" type="hidden">
+                <button class="secondary" type="submit">Registrar nota de reconciliação</button>
+                <small>O status permanece inalterado até confirmação externa autenticada.</small>
+              </form>
             </article>
           </section>
         </div>
