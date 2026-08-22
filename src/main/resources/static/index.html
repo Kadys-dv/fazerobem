@@ -1,18 +1,125 @@
 <!doctype html>
-<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Rede de Ajuda Mútua</title>
-<style>body{font-family:system-ui;margin:0;background:#f6f7f9;color:#19202a}main{max-width:1100px;margin:auto;padding:32px}.hero,.card{background:white;border-radius:18px;padding:24px;margin-bottom:18px;box-shadow:0 6px 24px #0000000c}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}.metric{font-size:2rem;font-weight:700}.muted{color:#68707d}.policy{border:1px solid #e5e8ee;border-radius:14px;padding:16px}.policy b{display:block;margin-bottom:8px}.pill{display:inline-block;background:#eef1f5;border-radius:999px;padding:4px 8px;margin:3px 4px 3px 0;font-size:.84rem}</style></head>
-<body><main><section class="hero"><h1>Rede de Ajuda Mútua</h1><p>Contribuições voluntárias. Auxílios por critérios públicos. Sem investimento, rendimento, promessa de retorno ou recompensa por recrutamento.</p></section>
-<section class="grid"><div class="card"><div class="muted">Saldo do fundo</div><div id="balance" class="metric">—</div></div><div class="card"><div class="muted">Membros ativos</div><div id="members" class="metric">—</div></div><div class="card"><div class="muted">Pedidos</div><div id="requests" class="metric">—</div></div><div class="card"><div class="muted">Auxílios pagos</div><div id="paid" class="metric">—</div></div></section>
-<section class="card"><h2>Princípios do projeto</h2><ul><li>Contribuição não gera crédito, rendimento ou direito de restituição.</li><li>Indicações não geram pagamento.</li><li>Auxílio depende de elegibilidade objetiva, análise, dupla aprovação e saldo disponível.</li><li>Movimentações ficam registradas em ledger encadeado por hash.</li></ul></section>
-<section class="card"><h2>Regras públicas de auxílio</h2><p class="muted">Os tetos e períodos abaixo são aplicados automaticamente pelo sistema.</p><div id="policies" class="grid">Carregando…</div></section>
-<section class="card"><h2>Ledger público</h2><div id="ledger">Carregando…</div></section></main>
-<script>
-const brl=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v);
-const labels={FOOD:'Alimentação',HEALTH:'Saúde',HOUSING:'Moradia',UTILITIES:'Contas essenciais',EMPLOYMENT:'Emprego e renda',EDUCATION:'Educação',GENERAL_EMERGENCY:'Emergência geral'};
-async function load(){
- const t=await fetch('/api/v1/transparency').then(r=>r.json());balance.textContent=brl(t.balance);members.textContent=t.activeMembers;requests.textContent=t.totalAidRequests;paid.textContent=t.paidAidRequests;
- const ps=await fetch('/api/v1/aid-policies').then(r=>r.json());policies.innerHTML=ps.map(p=>`<div class="policy"><b>${labels[p.category]||p.category}</b><span class="pill">Teto ${brl(p.maxAmount)}</span><span class="pill">Carência ${p.waitingDays}d</span><span class="pill">Intervalo ${p.cooldownDays}d</span><span class="pill">Documento: ${p.documentRequired?'sim':'não'}</span></div>`).join('');
- const l=await fetch('/api/v1/transparency/ledger').then(r=>r.json());ledger.innerHTML=l.length?l.slice(0,20).map(x=>`<p><b>${x.type}</b> · ${brl(x.amount)}<br><span class="muted">${new Date(x.createdAt).toLocaleString('pt-BR')} · ${x.description}</span></p>`).join(''):'Nenhuma movimentação ainda.';
-}
-load();
-</script></body></html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#173f35">
+  <meta name="description" content="Fazer o Bem — comunidade de ajuda mútua com transparência, critérios públicos e governança.">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/app.css">
+  <title>Fazer o Bem</title>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="#inicio" aria-label="Fazer o Bem">
+    <span class="brand-mark">FB</span>
+    <span><strong>Fazer o Bem</strong><small>Comunidade de ajuda mútua</small></span>
+  </a>
+  <nav class="top-actions">
+    <button id="installBtn" class="ghost hidden" type="button">Instalar app</button>
+    <button id="authBtn" class="secondary" type="button">Entrar</button>
+    <button id="logoutBtn" class="ghost hidden" type="button">Sair</button>
+  </nav>
+</header>
+
+<main id="inicio">
+  <section class="hero">
+    <div>
+      <span class="eyebrow">Ajuda mútua, sem promessa de retorno</span>
+      <h1>Uma comunidade que transforma contribuições voluntárias em ajuda transparente.</h1>
+      <p>O Fazer o Bem organiza um fundo comunitário com regras públicas, análise, dupla aprovação e prestação de contas. Contribuir não gera rendimento, prioridade ou direito de restituição.</p>
+      <div class="hero-actions">
+        <button id="heroAuthBtn" class="primary" type="button">Participar da comunidade</button>
+        <a class="secondary link-button" href="#transparencia">Ver transparência</a>
+      </div>
+    </div>
+    <div class="trust-card">
+      <strong>Como funciona</strong>
+      <ol>
+        <li>Contribuições entram no fundo coletivo.</li>
+        <li>Membros solicitam auxílio por necessidade.</li>
+        <li>Critérios, análise e antifraude são aplicados.</li>
+        <li>Dois aprovadores distintos validam o pedido.</li>
+        <li>Movimentações ficam registradas no ledger.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="memberArea" class="section hidden">
+    <div class="section-heading">
+      <div><span class="eyebrow">Área do membro</span><h2 id="welcomeTitle">Minha comunidade</h2></div>
+      <span id="memberRole" class="status-pill">MEMBER</span>
+    </div>
+
+    <div class="member-grid">
+      <article class="panel action-panel">
+        <h3>Contribuir com o fundo</h3>
+        <p class="muted">Contribuição voluntária. Não gera rendimento, crédito ou promessa de auxílio futuro.</p>
+        <form id="contributionForm">
+          <label>Valor da contribuição
+            <div class="money-input"><span>R$</span><input id="contributionAmount" inputmode="decimal" placeholder="50,00" required></div>
+          </label>
+          <label class="check"><input id="contributionConsent" type="checkbox" required><span>Compreendo que esta contribuição é destinada ao fundo comunitário e não é investimento.</span></label>
+          <button class="primary full" type="submit">Registrar contribuição sandbox</button>
+        </form>
+      </article>
+
+      <article class="panel action-panel">
+        <h3>Preciso de ajuda</h3>
+        <p class="muted">O pedido será avaliado pelas regras públicas da categoria e disponibilidade do fundo.</p>
+        <form id="aidForm">
+          <label>Categoria<select id="aidCategory" required></select></label>
+          <label>Valor solicitado<div class="money-input"><span>R$</span><input id="aidAmount" inputmode="decimal" placeholder="300,00" required></div></label>
+          <label>Explique a necessidade<textarea id="aidReason" maxlength="1000" rows="4" required placeholder="Conte de forma objetiva para que a equipe consiga analisar o pedido."></textarea></label>
+          <label class="check"><input id="aidEmergency" type="checkbox"><span>É uma situação emergencial</span></label>
+          <div id="selectedPolicy" class="policy-note"></div>
+          <button class="primary full" type="submit">Enviar pedido</button>
+        </form>
+      </article>
+    </div>
+
+    <article class="panel">
+      <div class="panel-header"><div><h3>Meus pedidos</h3><p class="muted">Acompanhe a evolução de cada solicitação.</p></div><button id="refreshMine" class="ghost" type="button">Atualizar</button></div>
+      <div id="myRequests" class="request-list empty-state">Nenhum pedido carregado.</div>
+    </article>
+  </section>
+
+  <section id="transparencia" class="section">
+    <div class="section-heading"><div><span class="eyebrow">Prestação de contas</span><h2>Transparência pública</h2></div><button id="refreshPublic" class="ghost" type="button">Atualizar</button></div>
+    <div class="metrics">
+      <article class="metric-card"><span>Saldo do fundo</span><strong id="balance">—</strong></article>
+      <article class="metric-card"><span>Membros ativos</span><strong id="members">—</strong></article>
+      <article class="metric-card"><span>Pedidos recebidos</span><strong id="requests">—</strong></article>
+      <article class="metric-card"><span>Auxílios pagos</span><strong id="paid">—</strong></article>
+    </div>
+
+    <div class="content-grid">
+      <article class="panel"><h3>Regras públicas de auxílio</h3><p class="muted">Tetos, carências e exigências aplicadas automaticamente.</p><div id="policies" class="policy-grid">Carregando…</div></article>
+      <article class="panel"><h3>Últimas movimentações</h3><p class="muted">Dados pessoais não são expostos.</p><div id="ledger" class="ledger-list">Carregando…</div></article>
+    </div>
+  </section>
+</main>
+
+<dialog id="authDialog">
+  <div class="dialog-head"><div><span class="eyebrow">Acesso à comunidade</span><h2>Entrar ou criar conta</h2></div><button id="closeAuth" class="icon-btn" type="button" aria-label="Fechar">×</button></div>
+  <div class="tabs"><button id="loginTab" class="tab active" type="button">Entrar</button><button id="registerTab" class="tab" type="button">Criar conta</button></div>
+  <form id="loginForm" class="auth-form">
+    <label>E-mail<input id="loginEmail" type="email" autocomplete="username" required></label>
+    <label>Senha<input id="loginPassword" type="password" autocomplete="current-password" required></label>
+    <button class="primary full" type="submit">Entrar</button>
+  </form>
+  <form id="registerForm" class="auth-form hidden">
+    <label>Nome<input id="registerName" autocomplete="name" required></label>
+    <label>E-mail<input id="registerEmail" type="email" autocomplete="email" required></label>
+    <label>Senha<input id="registerPassword" type="password" minlength="10" autocomplete="new-password" required></label>
+    <p class="legal-note">Ao criar a conta, você reconhece que o Fazer o Bem não é investimento e que contribuições não geram promessa de retorno financeiro.</p>
+    <button class="primary full" type="submit">Criar conta</button>
+  </form>
+  <p id="authMessage" class="form-message" role="status"></p>
+</dialog>
+
+<div id="toast" class="toast hidden" role="status"></div>
+<script src="/app.js" defer></script>
+</body>
+</html>
