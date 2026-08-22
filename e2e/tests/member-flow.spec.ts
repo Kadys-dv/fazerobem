@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('member can register, contribute in sandbox and request aid', async ({ page }) => {
+test('member completes onboarding, contributes in sandbox and requests aid', async ({ page }) => {
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const email = `member-${suffix}@example.test`;
 
@@ -17,11 +17,20 @@ test('member can register, contribute in sandbox and request aid', async ({ page
 
   await expect(page.locator('#memberArea')).toBeVisible();
   await expect(page.locator('#memberRole')).toHaveText('MEMBER');
+  await expect(page.locator('#onboardingDialog')).toBeVisible();
+
+  await page.locator('#acceptTerms').check();
+  await page.locator('#acceptPrivacy').check();
+  await page.locator('#acceptRules').check();
+  await page.getByRole('button', { name: 'Aceitar e continuar' }).click();
+  await expect(page.locator('#onboardingDialog')).not.toBeVisible();
 
   await page.locator('#contributionAmount').fill('25,00');
   await page.locator('#contributionConsent').check();
   await page.getByRole('button', { name: 'Registrar contribuição sandbox' }).click();
   await expect(page.locator('#toast')).toContainText('Contribuição sandbox registrada');
+  await expect(page.locator('#myContributionTotal')).toContainText('25,00');
+  await expect(page.locator('#myContributions')).toContainText('Contribuição voluntária');
 
   const category = page.locator('#aidCategory');
   await category.selectOption({ index: 1 });
@@ -32,4 +41,6 @@ test('member can register, contribute in sandbox and request aid', async ({ page
   await expect(page.locator('#toast')).toContainText('Pedido enviado para análise');
   await expect(page.locator('#myRequests')).toContainText('R$ 10,00');
   await expect(page.locator('#myRequests')).toContainText('Em análise');
+  await expect(page.locator('#requestDialog')).toBeVisible();
+  await expect(page.locator('#eligibilityBox')).toContainText('Critérios de elegibilidade');
 });
