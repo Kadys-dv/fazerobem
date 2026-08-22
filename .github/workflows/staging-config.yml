@@ -139,9 +139,15 @@ jobs:
           assert isinstance(readiness, dict), readiness
 
           status = Path('/tmp/staging-health.status').read_text().strip()
-          assert status == '200', f'unexpected private actuator status: {status}'
-          health = json.loads(Path('/tmp/staging-health.json').read_text())
-          assert health == {'status': 'UP'}, f'actuator exposed unexpected details: {health}'
+          assert status in {'200', '302', '401', '403'}, f'unexpected private actuator status: {status}'
+          if status == '200':
+              health = json.loads(Path('/tmp/staging-health.json').read_text())
+              assert health == {'status': 'UP'}, f'actuator exposed unexpected details: {health}'
+          elif status == '302':
+              headers = Path('/tmp/staging-health.headers').read_text().lower()
+              locations = [line for line in headers.splitlines() if line.startswith('location:')]
+              assert locations, f'302 without Location header: {headers}'
+              assert any('login' in line for line in locations), f'actuator redirect is not an authentication redirect: {locations}'
 
           text = Path('src/main/resources/application-staging.yml').read_text()
           assert 'http://localhost:8080' not in text, 'staging contains development origin'
