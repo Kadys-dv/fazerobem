@@ -32,12 +32,14 @@ async function assertCaseVisibleToOperator(page: Page, aidId: string) {
   expect(cases.some((x: { id: string }) => x.id === aidId), `aid ${aidId} missing from operator queue: ${text}`).toBeTruthy();
 }
 
-async function openOperationalCase(page: Page, aidId: string, reason: string) {
+async function openOperationalCase(page: Page, aidId: string, reason: string, role: string) {
   await assertCaseVisibleToOperator(page, aidId);
   await page.goto('/operations.html');
   await expect(page.getByRole('heading', { name: 'Fila operacional' })).toBeVisible();
+  await expect(page.locator('#operatorIdentity')).toContainText(role, { timeout: 15_000 });
+  await expect.poll(async () => Number(await page.locator('#caseCount').textContent()), { timeout: 15_000 }).toBeGreaterThan(0);
   const item = page.locator(`.case-item[data-id="${aidId}"]`);
-  await expect(item).toBeVisible();
+  await expect(item).toBeVisible({ timeout: 15_000 });
   await expect(item).toContainText(reason);
   await item.click();
   await expect(page.locator('#caseReason')).toHaveText(reason);
@@ -73,7 +75,7 @@ test('full aid governance requires analyst screening and two distinct approvers 
   await logout(page);
 
   await login(page, 'analyst@demo.local');
-  await openOperationalCase(page, aidId, reason);
+  await openOperationalCase(page, aidId, reason, 'ANALYST');
   await expect(page.locator('#analystActions')).toBeVisible();
   await expect(page.locator('#documentList')).toContainText('governanca-comprovante.png');
 
@@ -93,7 +95,7 @@ test('full aid governance requires analyst screening and two distinct approvers 
   await logout(page);
 
   await login(page, 'approver1@demo.local');
-  await openOperationalCase(page, aidId, reason);
+  await openOperationalCase(page, aidId, reason, 'APPROVER');
   await expect(page.locator('#approverActions')).toBeVisible();
   await page.locator('#approvalNote').fill('Primeira aprovação após análise documental e antifraude.');
   await page.locator('#approvalForm').getByRole('button', { name: 'Registrar aprovação' }).click();
@@ -107,7 +109,7 @@ test('full aid governance requires analyst screening and two distinct approvers 
   await logout(page);
 
   await login(page, 'approver2@demo.local');
-  await openOperationalCase(page, aidId, reason);
+  await openOperationalCase(page, aidId, reason, 'APPROVER');
   await page.locator('#approvalNote').fill('Segunda aprovação independente.');
   await page.locator('#approvalForm').getByRole('button', { name: 'Registrar aprovação' }).click();
   await expect(page.locator('#toast')).toContainText('Aprovação registrada');
