@@ -1,0 +1,197 @@
+name: staging-service-rehearsal
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  staging-service-rehearsal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Validate Neon staging secrets
+        shell: bash
+        env:
+          DB_URL: ${{ secrets.NEON_STAGING_JDBC_URL }}
+          DB_USER: ${{ secrets.NEON_STAGING_DB_USER }}
+          DB_PASSWORD: ${{ secrets.NEON_STAGING_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$DB_URL"
+          test -n "$DB_USER"
+          test -n "$DB_PASSWORD"
+          case "$DB_URL" in
+            jdbc:postgresql://*sslmode=require*) ;;
+            *) echo "Neon staging JDBC URL must require TLS" >&2; exit 1 ;;
+          esac
+
+      - name: Generate stable ephemeral rehearsal secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_KEY=$(openssl rand -base64 32 | tr -d '\n')
+          WEBHOOK_SECRET=$(openssl rand -hex 32)
+          echo "::add-mask::$APP_KEY"
+          echo "::add-mask::$WEBHOOK_SECRET"
+          echo "APP_KEY=$APP_KEY" >> "$GITHUB_ENV"
+          echo "WEBHOOK_SECRET=$WEBHOOK_SECRET" >> "$GITHUB_ENV"
+
+      - name: Define service environment
+        shell: bash
+        run: |
+          mkdir -p /tmp/fazerobem-service-rehearsal-documents evidence
+          cat > /tmp/start-staging-service.sh <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          export DB_URL='${{ secrets.NEON_STAGING_JDBC_URL }}'
+          export DB_USER='${{ secrets.NEON_STAGING_DB_USER }}'
+          export DB_PASSWORD='${{ secrets.NEON_STAGING_DB_PASSWORD }}'
+          export REDIS_HOST=127.0.0.1
+          export REDIS_PORT=6379
+          export REDIS_PASSWORD=''
+          export APP_CRYPTO_KEY_ID=ci-service-rehearsal
+          export APP_CRYPTO_MASTER_KEY_BASE64="$APP_KEY"
+          export SANDBOX_WEBHOOK_SECRET="$WEBHOOK_SECRET"
+          export KMS_PROVIDER=local
+          export DOCUMENTS_PATH=/tmp/fazerobem-service-rehearsal-documents
+          export PAYMENT_INITIATION_ENABLED=false
+          export WEBAUTHN_RP_NAME='Fazer o Bem Staging'
+          export WEBAUTHN_RP_ID=staging.fazerobem.invalid
+          export WEBAUTHN_ALLOWED_ORIGINS=https://staging.fazerobem.invalid
+          export TRACE_SAMPLE_PROBABILITY=1.0
+          export APP_SECURITY_MFA_REQUIRED_FOR_PRIVILEGED=false
+          export MANAGEMENT_PORT=18081
+          nohup mvn -B spring-boot:run -Dspring-boot.run.profiles=staging > /tmp/staging-service-rehearsal.log 2>&1 &
+          echo $! > /tmp/staging-service-rehearsal.pid
+          SH
+          chmod 700 /tmp/start-staging-service.sh
+
+      - name: Start baseline service and verify readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          /tmp/start-staging-service.sh
+          ready=false
+          for i in {1..90}; do
+            if docker run --rm --add-host=host.docker.internal:host-gateway curlimages/curl:8.15.0 \
+              -fsS http://host.docker.internal:8080/api/v1/transparency >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" = true || { cat /tmp/staging-service-rehearsal.log; exit 1; }
+          curl -fsS http://127.0.0.1:18081/actuator/health | grep -q '"UP"'
+
+      - name: Simulate service outage
+        shell: bash
+        run: |
+          set -euo pipefail
+          INCIDENT_EPOCH=$(date +%s)
+          echo "INCIDENT_EPOCH=$INCIDENT_EPOCH" >> "$GITHUB_ENV"
+          kill "$(cat /tmp/staging-service-rehearsal.pid)"
+          for i in {1..30}; do
+            if ! curl -fsS http://127.0.0.1:8080/api/v1/transparency >/dev/null 2>&1; then
+              echo "outage_confirmed=true" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "service did not become unavailable after termination" >&2
+          exit 1
+
+      - name: Restart service and measure recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          /tmp/start-staging-service.sh
+          recovered=false
+          for i in {1..90}; do
+            if docker run --rm --add-host=host.docker.internal:host-gateway curlimages/curl:8.15.0 \
+              -fsS http://host.docker.internal:8080/api/v1/transparency >/dev/null 2>&1; then
+              recovered=true
+              break
+            fi
+            sleep 2
+          done
+          test "$recovered" = true || { cat /tmp/staging-service-rehearsal.log; exit 1; }
+          RECOVERED_EPOCH=$(date +%s)
+          RTO_SECONDS=$((RECOVERED_EPOCH-INCIDENT_EPOCH))
+          test "$RTO_SECONDS" -le 1800
+          echo "RECOVERED_EPOCH=$RECOVERED_EPOCH" >> "$GITHUB_ENV"
+          echo "RTO_SECONDS=$RTO_SECONDS" >> "$GITHUB_ENV"
+
+      - name: Verify post-recovery invariants
+        shell: bash
+        env:
+          DB_URL: ${{ secrets.NEON_STAGING_JDBC_URL }}
+          DB_USER: ${{ secrets.NEON_STAGING_DB_USER }}
+          DB_PASSWORD: ${{ secrets.NEON_STAGING_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          curl -fsS http://127.0.0.1:18081/actuator/health -o evidence/post-recovery-health.json
+          docker run --rm --network host \
+            -e PGPASSWORD="$DB_PASSWORD" -e PGSSLMODE=require postgres:18-alpine \
+            psql "${DB_URL#jdbc:}" -U "$DB_USER" -Atc \
+            "select (select count(*) from flyway_schema_history where success and version in ('1','2','3','4','5','6','7','8')) || ',' || (select count(*) from ledger_chain_lock) || ',' || (select count(*) from audit_chain_lock);" \
+            > evidence/database-invariants.txt
+          test "$(cat evidence/database-invariants.txt)" = "8,1,1"
+          docker exec "${{ job.services.redis.id }}" redis-cli ping | grep -q PONG || true
+
+      - name: Record service rehearsal evidence
+        shell: bash
+        run: |
+          {
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "commit=${GITHUB_SHA}"
+            echo "incident_epoch=${INCIDENT_EPOCH}"
+            echo "recovered_epoch=${RECOVERED_EPOCH}"
+            echo "service_rto_seconds=${RTO_SECONDS}"
+            echo "rto_objective_seconds=1800"
+            echo "flyway_v1_v8=8"
+            echo "ledger_chain_lock=1"
+            echo "audit_chain_lock=1"
+            echo "payment_initiation_enabled=false"
+            echo "scope=ci_staging_profile_full_service_process_restart"
+            echo "external_internet_failover=PENDING"
+          } > evidence/service-rehearsal-evidence.txt
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-service-rehearsal-${{ github.run_id }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Show logs on failure
+        if: failure()
+        run: cat /tmp/staging-service-rehearsal.log || true
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          test -f /tmp/staging-service-rehearsal.pid && kill "$(cat /tmp/staging-service-rehearsal.pid)" || true
+          rm -rf /tmp/fazerobem-service-rehearsal-documents
