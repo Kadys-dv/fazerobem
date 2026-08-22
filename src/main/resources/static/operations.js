@@ -43,6 +43,7 @@ function bind(){
   $('approvalForm').addEventListener('submit',submitApproval);
   $('rejectionForm').addEventListener('submit',submitRejection);
   $('paymentForm').addEventListener('submit',submitPayment);
+  $('reconciliationForm').addEventListener('submit',submitReconciliationNote);
 }
 
 async function loadCases(){
@@ -101,6 +102,9 @@ async function loadPayments(aidId,aidStatus){
   const active=rows.some(x=>['READY','PROCESSING','SETTLED','RECONCILIATION_REQUIRED'].includes(x.status));
   $('paymentForm').classList.toggle('hidden',state.me.role!=='ADMIN');
   $('initiatePaymentButton').disabled=state.me.role!=='ADMIN'||aidStatus!=='APPROVED'||active;
+  const recon=rows.find(x=>x.status==='RECONCILIATION_REQUIRED');
+  $('reconciliationForm').classList.toggle('hidden',state.me.role!=='ADMIN'||!recon);
+  $('reconciliationPaymentId').value=recon?.id||'';
 }
 
 function historyHtml(d){
@@ -128,6 +132,18 @@ async function submitPayment(ev){
     toast('Pagamento sandbox iniciado');
     await loadCases();
     await selectCase(state.selectedId);
+  }catch(e){toast(e.message);}
+}
+async function submitReconciliationNote(ev){
+  ev.preventDefault();
+  const paymentId=$('reconciliationPaymentId').value;
+  const note=$('reconciliationNote').value.trim();
+  if(!paymentId||!note)return;
+  try{
+    await json(`/api/v1/payments/attempts/${encodeURIComponent(paymentId)}/reconciliation-note`,{method:'POST',body:JSON.stringify({note})});
+    $('reconciliationNote').value='';
+    toast('Nota de reconciliação registrada; status mantido');
+    await selectCase(state.selectedId,false);
   }catch(e){toast(e.message);}
 }
 async function act(url,body,success){
