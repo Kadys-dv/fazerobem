@@ -132,10 +132,24 @@ jobs:
       - name: Wait for dependencies
         shell: bash
         run: |
-          for i in {1..30}; do docker exec fazerobem-pg pg_isready -U ajuda_ci -d ajuda_mutua_ci && break; sleep 2; done
-          docker exec fazerobem-pg pg_isready -U ajuda_ci -d ajuda_mutua_ci
-          for i in {1..30}; do docker exec fazerobem-redis redis-cli ping | grep -q PONG && break; sleep 1; done
-          docker exec fazerobem-redis redis-cli ping | grep -q PONG
+          PG_READY=0
+          for i in {1..30}; do
+            if docker exec fazerobem-pg pg_isready -U ajuda_ci -d ajuda_mutua_ci >/dev/null 2>&1; then
+              sleep 2
+              if docker exec fazerobem-pg pg_isready -U ajuda_ci -d ajuda_mutua_ci >/dev/null 2>&1; then PG_READY=1; break; fi
+            fi
+            sleep 2
+          done
+          test "$PG_READY" = "1"
+          REDIS_READY=0
+          for i in {1..30}; do
+            if docker exec fazerobem-redis redis-cli ping 2>/dev/null | grep -q PONG; then
+              sleep 1
+              if docker exec fazerobem-redis redis-cli ping 2>/dev/null | grep -q PONG; then REDIS_READY=1; break; fi
+            fi
+            sleep 1
+          done
+          test "$REDIS_READY" = "1"
       - name: Start application
         shell: bash
         env:
