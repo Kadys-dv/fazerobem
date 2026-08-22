@@ -94,7 +94,7 @@ function historyHtml(d){
   const rows=[];
   rows.push({at:d.request.createdAt,title:'Pedido criado',text:`${d.request.category} · ${money(d.request.amount)}`});
   (d.analyses||[]).forEach(x=>rows.push({at:x.createdAt,title:'Parecer do analista',text:x.opinion}));
-  if(d.fraudScreening) rows.push({at:d.fraudScreening.createdAt,title:`Antifraude: ${d.fraudScreening.status}`,text:`Risco ${d.fraudScreening.riskScore}/100 · ${d.fraudScreening.note}${d.fraudScreening.flags?' · '+d.fraudScreening.flags:''}`}));
+  if(d.fraudScreening) rows.push({at:d.fraudScreening.createdAt,title:`Antifraude: ${d.fraudScreening.status}`,text:`Risco ${d.fraudScreening.riskScore}/100 · ${d.fraudScreening.note}${d.fraudScreening.flags?' · '+d.fraudScreening.flags:''}`});
   (d.approvals||[]).forEach((x,i)=>rows.push({at:x.createdAt,title:`Aprovação ${i+1}`,text:x.note}));
   if(d.request.status==='APPROVED')rows.push({at:d.request.updatedAt||d.request.createdAt,title:'Dupla aprovação concluída',text:d.request.decisionReason||'Pedido aprovado.'});
   if(d.request.status==='REJECTED')rows.push({at:d.request.updatedAt||d.request.createdAt,title:'Pedido rejeitado',text:d.request.decisionReason||'Rejeição registrada.'});
