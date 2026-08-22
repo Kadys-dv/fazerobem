@@ -80,7 +80,7 @@
     </div>
 
     <article class="panel">
-      <div class="panel-header"><div><h3>Meus pedidos</h3><p class="muted">Acompanhe a evolução de cada solicitação.</p></div><button id="refreshMine" class="ghost" type="button">Atualizar</button></div>
+      <div class="panel-header"><div><h3>Meus pedidos</h3><p class="muted">Acompanhe cada solicitação, entenda os critérios e envie documentos.</p></div><button id="refreshMine" class="ghost" type="button">Atualizar</button></div>
       <div id="myRequests" class="request-list empty-state">Nenhum pedido carregado.</div>
     </article>
   </section>
@@ -117,6 +117,37 @@
     <button class="primary full" type="submit">Criar conta</button>
   </form>
   <p id="authMessage" class="form-message" role="status"></p>
+</dialog>
+
+<dialog id="aidDetailDialog" class="wide-dialog">
+  <div class="dialog-head">
+    <div><span class="eyebrow">Detalhes do pedido</span><h2 id="detailTitle">Pedido de auxílio</h2></div>
+    <button id="closeAidDetail" class="icon-btn" type="button" aria-label="Fechar">×</button>
+  </div>
+  <div id="aidDetailSummary" class="detail-summary"></div>
+  <section class="detail-section">
+    <h3>Elegibilidade atual</h3>
+    <p class="muted">Esta avaliação pode mudar conforme documentos, análise e disponibilidade do fundo.</p>
+    <div id="eligibilityBox" class="eligibility-box">Carregando…</div>
+  </section>
+  <section class="detail-section">
+    <div class="panel-header"><div><h3>Documentos</h3><p class="muted">PDF, JPG ou PNG, até 5 MB. Arquivos ficam protegidos e não aparecem na transparência pública.</p></div></div>
+    <div id="documentList" class="document-list">Carregando…</div>
+    <form id="documentForm" class="document-form" enctype="multipart/form-data">
+      <input id="documentAidId" type="hidden">
+      <label>Tipo do documento
+        <select id="documentType" required>
+          <option value="">Selecione</option>
+          <option value="COMPROVANTE_DESPESA">Comprovante de despesa</option>
+          <option value="COMPROVANTE_RESIDENCIA">Comprovante de residência</option>
+          <option value="LAUDO_OU_RECEITA">Laudo ou receita</option>
+          <option value="OUTRO_COMPROVANTE">Outro comprovante</option>
+        </select>
+      </label>
+      <label>Arquivo<input id="documentFile" type="file" accept="application/pdf,image/jpeg,image/png" required></label>
+      <button id="uploadDocumentBtn" class="primary full" type="submit">Enviar documento</button>
+    </form>
+  </section>
 </dialog>
 
 <div id="toast" class="toast hidden" role="status"></div>
