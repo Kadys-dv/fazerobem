@@ -1,0 +1,1 @@
+package br.com.ajudamutua.repository; import br.com.ajudamutua.model.MemberPrivateData; import org.springframework.data.jpa.repository.JpaRepository; import java.util.UUID; public interface MemberPrivateDataRepository extends JpaRepository<MemberPrivateData,UUID>{}

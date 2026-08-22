@@ -1,0 +1,3 @@
+package br.com.ajudamutua.model;
+import jakarta.persistence.*; import java.time.Instant; import java.util.UUID;
+@Entity @Table(name="login_security_events") public class LoginSecurityEvent { @Id private UUID id; private UUID userId; @Column(length=64) private String emailHash; @Column(nullable=false,length=40) private String eventType; @Column(length=80) private String ipPrefix; @Column(nullable=false) private Instant createdAt; protected LoginSecurityEvent(){} public LoginSecurityEvent(UUID id,UUID userId,String emailHash,String eventType,String ipPrefix,Instant createdAt){this.id=id;this.userId=userId;this.emailHash=emailHash;this.eventType=eventType;this.ipPrefix=ipPrefix;this.createdAt=createdAt;} }

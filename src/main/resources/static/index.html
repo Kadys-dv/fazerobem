@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Rede de Ajuda Mútua</title>
+<style>body{font-family:system-ui;margin:0;background:#f6f7f9;color:#19202a}main{max-width:1100px;margin:auto;padding:32px}.hero,.card{background:white;border-radius:18px;padding:24px;margin-bottom:18px;box-shadow:0 6px 24px #0000000c}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}.metric{font-size:2rem;font-weight:700}.muted{color:#68707d}.policy{border:1px solid #e5e8ee;border-radius:14px;padding:16px}.policy b{display:block;margin-bottom:8px}.pill{display:inline-block;background:#eef1f5;border-radius:999px;padding:4px 8px;margin:3px 4px 3px 0;font-size:.84rem}</style></head>
+<body><main><section class="hero"><h1>Rede de Ajuda Mútua</h1><p>Contribuições voluntárias. Auxílios por critérios públicos. Sem investimento, rendimento, promessa de retorno ou recompensa por recrutamento.</p></section>
+<section class="grid"><div class="card"><div class="muted">Saldo do fundo</div><div id="balance" class="metric">—</div></div><div class="card"><div class="muted">Membros ativos</div><div id="members" class="metric">—</div></div><div class="card"><div class="muted">Pedidos</div><div id="requests" class="metric">—</div></div><div class="card"><div class="muted">Auxílios pagos</div><div id="paid" class="metric">—</div></div></section>
+<section class="card"><h2>Princípios do projeto</h2><ul><li>Contribuição não gera crédito, rendimento ou direito de restituição.</li><li>Indicações não geram pagamento.</li><li>Auxílio depende de elegibilidade objetiva, análise, dupla aprovação e saldo disponível.</li><li>Movimentações ficam registradas em ledger encadeado por hash.</li></ul></section>
+<section class="card"><h2>Regras públicas de auxílio</h2><p class="muted">Os tetos e períodos abaixo são aplicados automaticamente pelo sistema.</p><div id="policies" class="grid">Carregando…</div></section>
+<section class="card"><h2>Ledger público</h2><div id="ledger">Carregando…</div></section></main>
+<script>
+const brl=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v);
+const labels={FOOD:'Alimentação',HEALTH:'Saúde',HOUSING:'Moradia',UTILITIES:'Contas essenciais',EMPLOYMENT:'Emprego e renda',EDUCATION:'Educação',GENERAL_EMERGENCY:'Emergência geral'};
+async function load(){
+ const t=await fetch('/api/v1/transparency').then(r=>r.json());balance.textContent=brl(t.balance);members.textContent=t.activeMembers;requests.textContent=t.totalAidRequests;paid.textContent=t.paidAidRequests;
+ const ps=await fetch('/api/v1/aid-policies').then(r=>r.json());policies.innerHTML=ps.map(p=>`<div class="policy"><b>${labels[p.category]||p.category}</b><span class="pill">Teto ${brl(p.maxAmount)}</span><span class="pill">Carência ${p.waitingDays}d</span><span class="pill">Intervalo ${p.cooldownDays}d</span><span class="pill">Documento: ${p.documentRequired?'sim':'não'}</span></div>`).join('');
+ const l=await fetch('/api/v1/transparency/ledger').then(r=>r.json());ledger.innerHTML=l.length?l.slice(0,20).map(x=>`<p><b>${x.type}</b> · ${brl(x.amount)}<br><span class="muted">${new Date(x.createdAt).toLocaleString('pt-BR')} · ${x.description}</span></p>`).join(''):'Nenhuma movimentação ainda.';
+}
+load();
+</script></body></html>

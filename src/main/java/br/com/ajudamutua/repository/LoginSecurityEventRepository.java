@@ -1,0 +1,1 @@
+package br.com.ajudamutua.repository; import br.com.ajudamutua.model.LoginSecurityEvent; import org.springframework.data.jpa.repository.JpaRepository; import java.util.UUID; public interface LoginSecurityEventRepository extends JpaRepository<LoginSecurityEvent,UUID>{}

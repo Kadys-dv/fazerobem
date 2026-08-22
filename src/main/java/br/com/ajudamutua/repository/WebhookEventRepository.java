@@ -1,0 +1,1 @@
+package br.com.ajudamutua.repository; import br.com.ajudamutua.model.WebhookEvent; import org.springframework.data.jpa.repository.JpaRepository; import java.util.*; public interface WebhookEventRepository extends JpaRepository<WebhookEvent,UUID>{ boolean existsByEventId(String eventId); }

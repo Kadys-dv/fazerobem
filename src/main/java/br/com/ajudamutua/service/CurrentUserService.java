@@ -1,0 +1,3 @@
+package br.com.ajudamutua.service;
+import br.com.ajudamutua.model.AppUser; import br.com.ajudamutua.repository.AppUserRepository; import org.springframework.security.core.context.SecurityContextHolder; import org.springframework.stereotype.Service;
+@Service public class CurrentUserService { private final AppUserRepository users; public CurrentUserService(AppUserRepository users){this.users=users;} public AppUser require(){var a=SecurityContextHolder.getContext().getAuthentication(); if(a==null||!a.isAuthenticated()||"anonymousUser".equals(a.getName())) throw new IllegalStateException("Autenticação necessária"); return users.findByEmailIgnoreCase(a.getName()).orElseThrow(()->new IllegalStateException("Usuário autenticado não encontrado"));}}

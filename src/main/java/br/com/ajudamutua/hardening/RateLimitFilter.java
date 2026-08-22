@@ -1,0 +1,10 @@
+package br.com.ajudamutua.hardening;
+import jakarta.servlet.*; import jakarta.servlet.http.*; import org.springframework.beans.factory.ObjectProvider; import org.springframework.beans.factory.annotation.Value; import org.springframework.data.redis.core.StringRedisTemplate; import org.springframework.stereotype.Component; import org.springframework.web.filter.OncePerRequestFilter;
+import java.io.IOException; import java.time.Duration; import java.time.Instant; import java.util.concurrent.*; import java.util.concurrent.atomic.AtomicInteger;
+@Component public class RateLimitFilter extends OncePerRequestFilter {
+ private record Bucket(long minute,AtomicInteger count){} private final ConcurrentHashMap<String,Bucket> local=new ConcurrentHashMap<>(); private final int limit; private final StringRedisTemplate redis; private final String prefix; private final boolean redisEnabled;
+ public RateLimitFilter(@Value("${app.security.rate-limit-per-minute:120}") int limit,@Value("${app.distributed-security.key-prefix:ajuda-mutua}") String prefix,@Value("${app.distributed-security.redis-enabled:true}") boolean redisEnabled,ObjectProvider<StringRedisTemplate> provider){this.limit=Math.max(20,limit);this.prefix=prefix;this.redisEnabled=redisEnabled;this.redis=provider.getIfAvailable();}
+ protected void doFilterInternal(HttpServletRequest req,HttpServletResponse res,FilterChain chain)throws ServletException,IOException{String key=req.getRemoteAddr()+":"+req.getRequestURI(); long count=increment(key);if(count>limit){res.setStatus(429);res.setHeader("Retry-After","60");res.setContentType("application/json");res.getWriter().write("{\"error\":\"RATE_LIMITED\"}");return;}chain.doFilter(req,res);}
+ private long increment(String key){if(redisEnabled&&redis!=null){try{String rk=prefix+":rl:"+Instant.now().getEpochSecond()/60+":"+key;Long n=redis.opsForValue().increment(rk);if(n!=null&&n==1)redis.expire(rk,Duration.ofSeconds(75));return n==null?1:n;}catch(Exception ignored){}}
+  long m=Instant.now().getEpochSecond()/60;Bucket b=local.compute(key,(x,o)->o==null||o.minute()!=m?new Bucket(m,new AtomicInteger()):o);return b.count().incrementAndGet();}
+}
