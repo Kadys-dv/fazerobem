@@ -40,7 +40,7 @@ jobs:
 
       - name: Verify backup fails closed without DB_URL
         run: |
-          if ./scripts/backup.sh >/tmp/backup.out 2>/tmp/backup.err; then
+          if bash scripts/backup.sh >/tmp/backup.out 2>/tmp/backup.err; then
             echo "backup deveria falhar sem DB_URL"
             exit 1
           fi
@@ -52,10 +52,10 @@ jobs:
           mkdir -p target/readiness-backups
           psql "$DB_URL" -v ON_ERROR_STOP=1 -c 'create table readiness_marker(id integer primary key, value text not null);'
           psql "$DB_URL" -v ON_ERROR_STOP=1 -c "insert into readiness_marker values (1, 'before-backup');"
-          backup_path="$(BACKUP_DIRECTORY=target/readiness-backups ./scripts/backup.sh)"
+          backup_path="$(BACKUP_DIRECTORY=target/readiness-backups bash scripts/backup.sh)"
           psql "$DB_URL" -v ON_ERROR_STOP=1 -c 'delete from readiness_marker;'
           test "$(psql "$DB_URL" -Atc 'select count(*) from readiness_marker;')" = "0"
-          RESTORE_CONFIRMATION=RESTORE_STAGING ./scripts/restore.sh "$backup_path"
+          RESTORE_CONFIRMATION=RESTORE_STAGING bash scripts/restore.sh "$backup_path"
           test "$(psql "$DB_URL" -Atc 'select value from readiness_marker where id=1;')" = "before-backup"
 
       - name: External health check rehearsal
@@ -64,7 +64,7 @@ jobs:
           printf '{"status":"UP"}\n' > target/health/actuator/health
           (cd target/health && python3 -m http.server 18080 >/tmp/readiness-health.log 2>&1 &)
           sleep 1
-          ALLOW_HTTP_FOR_TEST=true STAGING_BASE_URL=http://127.0.0.1:18080 ./scripts/external-health-check.sh
+          ALLOW_HTTP_FOR_TEST=true STAGING_BASE_URL=http://127.0.0.1:18080 bash scripts/external-health-check.sh
 
       - name: Payment freeze gate tests
         run: mvn -B -Dtest=PaymentOperationGateTest test
