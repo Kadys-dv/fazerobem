@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('member can register, contribute, request aid and upload a protected document', async ({ page }) => {
+test('member can onboard, contribute, request aid and upload a protected document', async ({ page }) => {
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const email = `member-${suffix}@example.test`;
 
@@ -17,11 +17,20 @@ test('member can register, contribute, request aid and upload a protected docume
 
   await expect(page.locator('#memberArea')).toBeVisible();
   await expect(page.locator('#memberRole')).toHaveText('MEMBER');
+  await expect(page.locator('#onboardingDialog')).toBeVisible();
+
+  await page.locator('#acceptTerms').check();
+  await page.locator('#acceptPrivacy').check();
+  await page.locator('#acceptRules').check();
+  await page.getByRole('button', { name: 'Concluir primeiro acesso' }).click();
+  await expect(page.locator('#toast')).toContainText('Primeiro acesso concluído');
+  await expect(page.locator('#onboardingDialog')).not.toBeVisible();
 
   await page.locator('#contributionAmount').fill('25,00');
   await page.locator('#contributionConsent').check();
   await page.getByRole('button', { name: 'Registrar contribuição sandbox' }).click();
   await expect(page.locator('#toast')).toContainText('Contribuição sandbox registrada');
+  await expect(page.locator('#myContributions')).toContainText('R$ 25,00');
 
   await page.locator('#aidCategory').selectOption('HEALTH');
   await page.locator('#aidAmount').fill('10,00');

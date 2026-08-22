@@ -83,6 +83,11 @@
       <div class="panel-header"><div><h3>Meus pedidos</h3><p class="muted">Acompanhe cada solicitação, entenda os critérios e envie documentos.</p></div><button id="refreshMine" class="ghost" type="button">Atualizar</button></div>
       <div id="myRequests" class="request-list empty-state">Nenhum pedido carregado.</div>
     </article>
+
+    <article class="panel">
+      <div class="panel-header"><div><h3>Minhas contribuições</h3><p class="muted">Histórico privado do que você destinou voluntariamente ao fundo.</p></div><strong id="myContributionTotal">R$ 0,00</strong></div>
+      <div id="myContributions" class="ledger-list empty-state">Nenhuma contribuição carregada.</div>
+    </article>
   </section>
 
   <section id="transparencia" class="section">
@@ -119,6 +124,18 @@
   <p id="authMessage" class="form-message" role="status"></p>
 </dialog>
 
+<dialog id="onboardingDialog" class="wide-dialog">
+  <div class="dialog-head"><div><span class="eyebrow">Primeiro acesso</span><h2>Antes de participar, confirme as regras atuais</h2></div></div>
+  <p class="muted">Os aceites são registrados separadamente e vinculados à versão vigente dos documentos. Esta versão é de produto/piloto e requer revisão jurídica formal antes de qualquer operação com recursos reais.</p>
+  <form id="onboardingForm" class="auth-form">
+    <label class="check"><input id="acceptTerms" type="checkbox" required><span>Li e aceito os <a href="/terms.html" target="_blank" rel="noopener">Termos de Participação</a>.</span></label>
+    <label class="check"><input id="acceptPrivacy" type="checkbox" required><span>Li e aceito a <a href="/privacy.html" target="_blank" rel="noopener">Política de Privacidade</a>.</span></label>
+    <label class="check"><input id="acceptRules" type="checkbox" required><span>Li e aceito as <a href="/community-rules.html" target="_blank" rel="noopener">Regras da Comunidade</a>.</span></label>
+    <button class="primary full" type="submit">Concluir primeiro acesso</button>
+    <p id="onboardingMessage" class="form-message" role="status"></p>
+  </form>
+</dialog>
+
 <dialog id="aidDetailDialog" class="wide-dialog">
   <div class="dialog-head">
     <div><span class="eyebrow">Detalhes do pedido</span><h2 id="detailTitle">Pedido de auxílio</h2></div>
@@ -152,5 +169,6 @@
 
 <div id="toast" class="toast hidden" role="status"></div>
 <script src="/app.js" defer></script>
+<script src="/member-onboarding.js" defer></script>
 </body>
 </html>

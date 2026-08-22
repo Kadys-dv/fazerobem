@@ -9,6 +9,8 @@ const CONCURRENCY = Number(process.env.PILOT_CONCURRENCY || 10);
 const MEMBER_PASSWORD = 'PilotOnly123!';
 const DEMO_PASSWORD = 'Demo12345!';
 const WEBHOOK_SECRET = process.env.SANDBOX_WEBHOOK_SECRET || '';
+const POLICY_VERSION = '2026-08-v1';
+const REQUIRED_CONSENTS = ['TERMS', 'PRIVACY_POLICY', 'COMMUNITY_RULES'];
 
 type Csrf = { headerName: string; parameterName: string; token: string };
 type AidSeed = { id: string; email: string; memberId: string };
@@ -57,6 +59,17 @@ async function operator(email: string) {
   return ctx;
 }
 
+async function acceptRequiredConsents(ctx: APIRequestContext) {
+  const response = await jsonMutation(ctx, '/api/v1/member/onboarding', {
+    version: POLICY_VERSION,
+    accepted: REQUIRED_CONSENTS
+  });
+  expect(response.ok(), `onboarding: ${await response.text()}`).toBeTruthy();
+  const status = await response.json();
+  expect(status.complete).toBe(true);
+  expect(status.missing).toHaveLength(0);
+}
+
 async function seedMember(index: number, runId: string): Promise<AidSeed | null> {
   const ctx = await request.newContext({ baseURL: BASE_URL });
   try {
@@ -81,6 +94,8 @@ async function seedMember(index: number, runId: string): Promise<AidSeed | null>
     expect(me.authenticated).toBe(true);
     expect(me.email).toBe(email);
     const memberId = me.memberId as string;
+
+    await acceptRequiredConsents(ctx);
 
     const contribution = await jsonMutation(ctx, '/api/v1/contributions', { memberId, amount: '25.00' });
     expect(contribution.status(), `contribution ${index}: ${await contribution.text()}`).toBe(201);
@@ -243,6 +258,7 @@ test('phase 8 pilot simulation preserves governance and financial invariants', a
       paidSample: PAID_SAMPLE_COUNT,
       concurrency: CONCURRENCY,
       csrfStrategy: 'one token per authentication state/session',
+      consentStrategy: `batched onboarding ${POLICY_VERSION} before member financial actions`,
       eligibilityScenario: 'HEALTH emergency with zero effective waiting',
       invariants: { distinctApprovals: true, exactlyOnceLedgerDebit: true, paymentIdempotency: true, webhookReplayProtection: true }
     }, null, 2));
