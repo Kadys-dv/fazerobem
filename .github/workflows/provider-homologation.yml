@@ -1,0 +1,19 @@
+name: provider-homologation
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  provider-homologation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Provider contract, retry, webhook and reconciliation tests
+        run: mvn -B -Dtest=SandboxPaymentProviderContractTest,PaymentServiceTest,WebhookSignatureServiceTest,PaymentServiceReconciliationTest test

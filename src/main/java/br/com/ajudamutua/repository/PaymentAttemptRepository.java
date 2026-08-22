@@ -20,6 +20,7 @@ public interface PaymentAttemptRepository extends JpaRepository<PaymentAttempt, 
     List<PaymentAttempt> findByAidRequestIdOrderByUpdatedAtDesc(UUID aidId);
     boolean existsByAidRequestIdAndStatusIn(UUID aidId, Collection<PaymentStatus> statuses);
     List<PaymentAttempt> findByStatusAndUpdatedAtBefore(PaymentStatus status, Instant cutoff);
+    List<PaymentAttempt> findByStatusInAndUpdatedAtBefore(Collection<PaymentStatus> statuses, Instant cutoff);
     long countByStatus(PaymentStatus status);
     long countByStatusAndUpdatedAtBefore(PaymentStatus status, Instant cutoff);
 
