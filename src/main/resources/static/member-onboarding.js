@@ -1,6 +1,3 @@
-const MEMBER_POLICY_VERSION='2026-08-v1';
-const MEMBER_REQUIRED_CONSENTS=['TERMS','PRIVACY_POLICY','COMMUNITY_RULES'];
-
 async function loadMemberContributions(){
   if(!state.me?.memberId||!$('myContributions'))return;
   try{
@@ -14,19 +11,19 @@ async function loadMemberContributions(){
   }catch(error){toast('Não foi possível carregar suas contribuições: '+error.message)}
 }
 
-async function memberMissingConsents(){
-  if(!state.me?.memberId)return [];
-  const records=await api(`/api/v1/privacy/consents/${state.me.memberId}`);
-  const accepted=new Set(records.filter(r=>r.accepted===true&&r.documentVersion===MEMBER_POLICY_VERSION).map(r=>r.consentType));
-  return MEMBER_REQUIRED_CONSENTS.filter(type=>!accepted.has(type));
+async function memberOnboardingStatus(){
+  if(!state.me?.authenticated||state.me.role!=='MEMBER')return {complete:true,missing:[],required:[],version:null};
+  return api('/api/v1/member/onboarding');
 }
 
 async function ensureMemberOnboarding(){
   if(!state.me?.authenticated||state.me.role!=='MEMBER')return true;
   try{
-    const missing=await memberMissingConsents();
-    state.memberOnboarded=missing.length===0;
-    state.memberMissingConsents=missing;
+    const status=await memberOnboardingStatus();
+    state.memberOnboarded=status.complete===true;
+    state.memberMissingConsents=status.missing||[];
+    state.memberPolicyVersion=status.version;
+    state.memberRequiredConsents=status.required||[];
     if(state.memberOnboarded){
       if($('onboardingDialog')?.open)$('onboardingDialog').close();
       return true;
@@ -59,15 +56,16 @@ $('onboardingForm')?.addEventListener('submit',async event=>{
   if(!$('acceptTerms').checked||!$('acceptPrivacy').checked||!$('acceptRules').checked)return;
   $('onboardingMessage').textContent='Registrando seus aceites…';
   try{
-    const missing=await memberMissingConsents();
-    for(const type of missing){
-      await api('/api/v1/privacy/consents',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({type,version:MEMBER_POLICY_VERSION,accepted:true})
-      });
-    }
-    await ensureMemberOnboarding();
+    const status=await memberOnboardingStatus();
+    const completed=await api('/api/v1/member/onboarding',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({version:status.version,accepted:status.required})
+    });
+    state.memberOnboarded=completed.complete===true;
+    state.memberMissingConsents=completed.missing||[];
+    if(!state.memberOnboarded)throw new Error('O primeiro acesso ainda possui documentos pendentes.');
+    $('onboardingDialog').close();
     $('onboardingMessage').textContent='';
     toast('Primeiro acesso concluído.');
   }catch(error){$('onboardingMessage').textContent=error.message}
@@ -78,18 +76,6 @@ document.addEventListener('member-session-ready',()=>{
     void Promise.all([ensureMemberOnboarding(),loadMemberContributions()]);
   }
 });
-
-const originalLoadSession=loadSession;
-loadSession=async function(){
-  await originalLoadSession();
-  document.dispatchEvent(new Event('member-session-ready'));
-};
-
-const originalLoadMine=loadMine;
-loadMine=async function(){
-  await originalLoadMine();
-  await loadMemberContributions();
-};
 
 if(state.me?.authenticated&&state.me.role==='MEMBER'){
   document.dispatchEvent(new Event('member-session-ready'));
