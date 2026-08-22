@@ -1,5 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 
+test.describe.configure({ retries: 0 });
+
 const DEMO_PASSWORD = 'Demo12345!';
 
 async function login(page: Page, email: string) {
@@ -29,7 +31,6 @@ async function openOperationalCase(page: Page, reason: string) {
 test('full aid governance requires analyst screening and two distinct approvers with audit trail', async ({ page }) => {
   const reason = `Governança E2E ${Date.now()}`;
 
-  // Membro demo tem antiguidade suficiente para cumprir a carência das políticas.
   await login(page, 'member@demo.local');
   await expect(page.locator('#memberRole')).toHaveText('MEMBER');
 
@@ -56,7 +57,6 @@ test('full aid governance requires analyst screening and two distinct approvers 
   const aidId = await page.locator('#documentAidId').inputValue();
   await logout(page);
 
-  // Analista: parecer + antifraude liberado.
   await login(page, 'analyst@demo.local');
   await openOperationalCase(page, reason);
   await expect(page.locator('#analystActions')).toBeVisible();
@@ -77,7 +77,6 @@ test('full aid governance requires analyst screening and two distinct approvers 
   await expect(page.locator('#eligibilitySummary')).toContainText('Elegível pelos critérios atuais');
   await logout(page);
 
-  // Primeiro aprovador: um voto é aceito; repetir o voto é bloqueado.
   await login(page, 'approver1@demo.local');
   await openOperationalCase(page, reason);
   await expect(page.locator('#approverActions')).toBeVisible();
@@ -92,7 +91,6 @@ test('full aid governance requires analyst screening and two distinct approvers 
   await expect(page.locator('#toast')).toContainText('Este usuário já aprovou o pedido');
   await logout(page);
 
-  // Segundo aprovador conclui a dupla aprovação.
   await login(page, 'approver2@demo.local');
   await openOperationalCase(page, reason);
   await page.locator('#approvalNote').fill('Segunda aprovação independente.');
@@ -103,7 +101,6 @@ test('full aid governance requires analyst screening and two distinct approvers 
   await expect(page.locator('#historyList')).toContainText('Dupla aprovação concluída');
   await logout(page);
 
-  // Admin confirma o estado agregado e a trilha de auditoria persistida.
   await login(page, 'admin@demo.local');
   const detailResponse = await page.request.get(`/api/v1/operations/aid-requests/${aidId}`);
   expect(detailResponse.ok()).toBeTruthy();
