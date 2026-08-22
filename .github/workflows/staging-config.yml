@@ -104,6 +104,7 @@ jobs:
           DOCUMENTS_PATH: /tmp/fazerobem-staging-documents
           SESSION_COOKIE_SECURE: 'true'
           PORT: '18080'
+          MANAGEMENT_PORT: '18081'
           OTEL_EXPORTER_OTLP_ENDPOINT: http://localhost:4318/v1/traces
         run: |
           export DB_PASSWORD="$STAGING_DB_PASSWORD"
@@ -124,7 +125,7 @@ jobs:
             exit 1
           fi
 
-          ACTUATOR_STATUS=$(curl -sS -D /tmp/staging-health.headers -o /tmp/staging-health.json -w '%{http_code}' http://localhost:18080/actuator/health || true)
+          ACTUATOR_STATUS=$(curl -sS -D /tmp/staging-health.headers -o /tmp/staging-health.json -w '%{http_code}' http://127.0.0.1:18081/actuator/health || true)
           echo "$ACTUATOR_STATUS" > /tmp/staging-health.status
 
       - name: Validate staging readiness, actuator exposure and hardened profile
@@ -138,15 +139,15 @@ jobs:
           assert isinstance(readiness, dict), readiness
 
           status = Path('/tmp/staging-health.status').read_text().strip()
-          assert status in {'200', '302', '401', '403'}, f'unexpected actuator status: {status}'
+          assert status in {'200', '302', '401', '403'}, f'unexpected private actuator status: {status}'
           if status == '200':
               health = json.loads(Path('/tmp/staging-health.json').read_text())
               assert health == {'status': 'UP'}, f'actuator exposed unexpected details: {health}'
           elif status == '302':
               headers = Path('/tmp/staging-health.headers').read_text().lower()
-              location_lines = [line for line in headers.splitlines() if line.startswith('location:')]
-              assert location_lines, f'302 without Location header: {headers}'
-              assert any('login' in line for line in location_lines), f'actuator redirect is not an authentication redirect: {location_lines}'
+              locations = [line for line in headers.splitlines() if line.startswith('location:')]
+              assert locations, f'302 without Location header: {headers}'
+              assert any('login' in line for line in locations), f'actuator redirect is not an authentication redirect: {locations}'
 
           text = Path('src/main/resources/application-staging.yml').read_text()
           assert 'http://localhost:8080' not in text, 'staging contains development origin'
@@ -158,7 +159,13 @@ jobs:
           assert 'webhook-secret: ${SANDBOX_WEBHOOK_SECRET}' in text, 'Webhook secret must be external'
           assert 'rp-id: ${WEBAUTHN_RP_ID}' in text, 'WebAuthn RP ID must be external'
           assert 'allowed-origins: ${WEBAUTHN_ALLOWED_ORIGINS}' in text, 'WebAuthn origin must be external'
+          assert 'address: 127.0.0.1' in text, 'management plane must bind to loopback'
+          assert 'include: health,prometheus,metrics' in text, 'required observability endpoints missing'
           PY
+          if ss -ltn | grep -Eq '0\.0\.0\.0:18081|\[::\]:18081'; then
+            echo "ERRO: management plane exposto fora de loopback"
+            exit 1
+          fi
 
       - name: Show logs on failure
         if: failure()
