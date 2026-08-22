@@ -1,0 +1,154 @@
+name: chaos-dr
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chaos-dr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Generate ephemeral CI secrets
+        shell: bash
+        run: |
+          DB_PASSWORD_VALUE=$(openssl rand -hex 24)
+          APP_KEY_VALUE=$(openssl rand -base64 32 | tr -d '\n')
+          WEBHOOK_SECRET_VALUE=$(openssl rand -hex 32)
+          echo "::add-mask::$DB_PASSWORD_VALUE"
+          echo "::add-mask::$APP_KEY_VALUE"
+          echo "::add-mask::$WEBHOOK_SECRET_VALUE"
+          echo "CI_DB_PASSWORD=$DB_PASSWORD_VALUE" >> "$GITHUB_ENV"
+          echo "APP_CRYPTO_MASTER_KEY_BASE64=$APP_KEY_VALUE" >> "$GITHUB_ENV"
+          echo "SANDBOX_WEBHOOK_SECRET=$WEBHOOK_SECRET_VALUE" >> "$GITHUB_ENV"
+
+      - name: Start PostgreSQL and Redis
+        shell: bash
+        run: |
+          docker run -d --name fazerobem-chaos-pg \
+            -e POSTGRES_DB=ajuda_mutua_chaos \
+            -e POSTGRES_USER=ajuda_chaos \
+            -e POSTGRES_PASSWORD="$CI_DB_PASSWORD" \
+            -p 5432:5432 postgres:17-alpine
+          docker run -d --name fazerobem-chaos-redis -p 6379:6379 redis:8-alpine
+
+      - name: Wait for dependencies
+        shell: bash
+        run: |
+          for i in {1..40}; do
+            docker exec fazerobem-chaos-pg pg_isready -U ajuda_chaos -d ajuda_mutua_chaos >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec fazerobem-chaos-pg pg_isready -U ajuda_chaos -d ajuda_mutua_chaos
+          for i in {1..40}; do
+            docker exec fazerobem-chaos-redis redis-cli ping 2>/dev/null | grep -q PONG && break
+            sleep 1
+          done
+          docker exec fazerobem-chaos-redis redis-cli ping | grep -q PONG
+
+      - name: Start application
+        shell: bash
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/ajuda_mutua_chaos
+          DB_USER: ajuda_chaos
+          REDIS_HOST: localhost
+          REDIS_PORT: '6379'
+          KMS_PROVIDER: local
+          APP_SECURITY_MFA_REQUIRED_FOR_PRIVILEGED: 'false'
+        run: |
+          export DB_PASSWORD="$CI_DB_PASSWORD"
+          nohup mvn -B spring-boot:run -Dspring-boot.run.profiles=dev > /tmp/fazerobem-chaos-app.log 2>&1 &
+          echo $! > /tmp/fazerobem-chaos-app.pid
+          for i in {1..90}; do
+            curl -fsS http://localhost:8080/api/v1/transparency >/dev/null && exit 0
+            sleep 2
+          done
+          cat /tmp/fazerobem-chaos-app.log
+          exit 1
+
+      - name: Seed live sandbox journey
+        working-directory: e2e
+        env:
+          BASE_URL: http://localhost:8080
+          SANDBOX_WEBHOOK_SECRET: ${{ env.SANDBOX_WEBHOOK_SECRET }}
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+          npx playwright test tests/member-flow.spec.ts tests/operational-governance.spec.ts --workers=1
+
+      - name: Restart Redis and verify recovery
+        shell: bash
+        run: |
+          docker restart fazerobem-chaos-redis
+          for i in {1..30}; do
+            docker exec fazerobem-chaos-redis redis-cli ping 2>/dev/null | grep -q PONG && break
+            sleep 1
+          done
+          docker exec fazerobem-chaos-redis redis-cli ping | grep -q PONG
+          curl -fsS http://localhost:8080/api/v1/transparency >/dev/null
+
+      - name: Restart PostgreSQL and verify application recovers
+        shell: bash
+        run: |
+          docker restart fazerobem-chaos-pg
+          for i in {1..40}; do
+            docker exec fazerobem-chaos-pg pg_isready -U ajuda_chaos -d ajuda_mutua_chaos >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec fazerobem-chaos-pg pg_isready -U ajuda_chaos -d ajuda_mutua_chaos
+          for i in {1..40}; do
+            curl -fsS http://localhost:8080/api/v1/transparency >/dev/null && exit 0
+            sleep 2
+          done
+          cat /tmp/fazerobem-chaos-app.log
+          exit 1
+
+      - name: Backup restore and financial invariants
+        shell: bash
+        env:
+          DB_URL_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: ajuda_mutua_chaos
+          DB_USER: ajuda_chaos
+          PG_CONTAINER: fazerobem-chaos-pg
+        run: |
+          export PGPASSWORD="$CI_DB_PASSWORD"
+          bash scripts/validate-backup-restore.sh /tmp/fazerobem-phase8.dump
+
+      - name: Verify live invariants after chaos
+        shell: bash
+        env:
+          PGPASSWORD: ${{ env.CI_DB_PASSWORD }}
+        run: |
+          psql -h localhost -U ajuda_chaos -d ajuda_mutua_chaos -Atc \
+            "select count(*) from (select aid_request_id from payment_attempts where status in ('READY','PROCESSING','SETTLED','RECONCILIATION_REQUIRED') group by aid_request_id having count(*) > 1) x;" | grep -qx '0'
+          psql -h localhost -U ajuda_chaos -d ajuda_mutua_chaos -Atc \
+            "select count(*) from payment_attempts p join aid_requests a on a.id=p.aid_request_id where p.status='SETTLED' and a.status <> 'PAID';" | grep -qx '0'
+
+      - name: Show logs on failure
+        if: failure()
+        run: cat /tmp/fazerobem-chaos-app.log || true
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          test -f /tmp/fazerobem-chaos-app.pid && kill "$(cat /tmp/fazerobem-chaos-app.pid)" || true
+          docker rm -f fazerobem-chaos-pg fazerobem-chaos-redis || true
