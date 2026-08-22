@@ -1,5 +1,5 @@
-const CACHE='fazerobem-static-v2';
-const STATIC=['/','/index.html','/app.css','/app.js','/manifest.webmanifest','/icon.svg'];
+const CACHE='fazerobem-static-v3';
+const STATIC=['/','/index.html','/app.css','/app.js','/manifest.webmanifest','/icon.svg','/terms.html','/privacy.html','/community-rules.html'];
 
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(STATIC)));
