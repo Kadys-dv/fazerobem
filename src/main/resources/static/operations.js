@@ -129,9 +129,9 @@ async function submitPayment(ev){
   try{
     const key=`ops-${state.selectedId}`;
     await json(`/api/v1/payments/${state.selectedId}/initiate`,{method:'POST',headers:{'Idempotency-Key':key}});
-    toast('Pagamento sandbox iniciado');
     await loadCases();
     await selectCase(state.selectedId);
+    toast('Pagamento sandbox iniciado');
   }catch(e){toast(e.message);}
 }
 async function submitReconciliationNote(ev){
@@ -142,12 +142,17 @@ async function submitReconciliationNote(ev){
   try{
     await json(`/api/v1/payments/attempts/${encodeURIComponent(paymentId)}/reconciliation-note`,{method:'POST',body:JSON.stringify({note})});
     $('reconciliationNote').value='';
-    toast('Nota de reconciliação registrada; status mantido');
     await selectCase(state.selectedId,false);
+    toast('Nota de reconciliação registrada; status mantido');
   }catch(e){toast(e.message);}
 }
 async function act(url,body,success){
-  try{await json(url,{method:'POST',body:JSON.stringify(body)});toast(success);await loadCases();await selectCase(state.selectedId);}catch(e){toast(e.message);}
+  try{
+    await json(url,{method:'POST',body:JSON.stringify(body)});
+    await loadCases();
+    await selectCase(state.selectedId);
+    toast(success);
+  }catch(e){toast(e.message);}
 }
 
 function bootstrap(){init().catch(e=>{state.initialized=false;toast(e.message);});}
