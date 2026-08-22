@@ -1,4 +1,4 @@
-const state={me:null,cases:[],selectedId:null,csrf:null};
+const state={me:null,cases:[],selectedId:null,csrf:null,initialized:false};
 const $=id=>document.getElementById(id);
 const money=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v||0));
 const date=v=>v?new Intl.DateTimeFormat('pt-BR',{dateStyle:'short',timeStyle:'short'}).format(new Date(v)):'—';
@@ -17,10 +17,12 @@ async function json(url,options={}){
   return res.json();
 }
 
-function toast(message){const el=$('toast');el.textContent=message;el.classList.remove('hidden');setTimeout(()=>el.classList.add('hidden'),3200);}
+function toast(message){const el=$('toast');if(!el)return;el.textContent=message;el.classList.remove('hidden');setTimeout(()=>el.classList.add('hidden'),3200);}
 function statusLabel(s){return ({PENDING:'Em análise',APPROVED:'Aprovado',REJECTED:'Rejeitado',PAID:'Pago'})[s]||s;}
 
 async function init(){
+  if(state.initialized)return;
+  state.initialized=true;
   state.me=await json('/api/v1/auth/me');
   const allowed=['ANALYST','APPROVER','ADMIN','AUDITOR'];
   if(!state.me.authenticated||!allowed.includes(state.me.role)){location.href='/';return;}
@@ -92,7 +94,7 @@ function historyHtml(d){
   const rows=[];
   rows.push({at:d.request.createdAt,title:'Pedido criado',text:`${d.request.category} · ${money(d.request.amount)}`});
   (d.analyses||[]).forEach(x=>rows.push({at:x.createdAt,title:'Parecer do analista',text:x.opinion}));
-  if(d.fraudScreening) rows.push({at:d.fraudScreening.createdAt,title:`Antifraude: ${d.fraudScreening.status}`,text:`Risco ${d.fraudScreening.riskScore}/100 · ${d.fraudScreening.note}${d.fraudScreening.flags?' · '+d.fraudScreening.flags:''}`}));
+  if(d.fraudScreening) rows.push({at:d.fraudScreening.createdAt,title:`Antifraude: ${d.fraudScreening.status}`,text:`Risco ${d.fraudScreening.riskScore}/100 · ${d.fraudScreening.note}${d.fraudScreening.flags?' · '+d.fraudScreening.flags:''}`});
   (d.approvals||[]).forEach((x,i)=>rows.push({at:x.createdAt,title:`Aprovação ${i+1}`,text:x.note}));
   if(d.request.status==='APPROVED')rows.push({at:d.request.updatedAt||d.request.createdAt,title:'Dupla aprovação concluída',text:d.request.decisionReason||'Pedido aprovado.'});
   if(d.request.status==='REJECTED')rows.push({at:d.request.updatedAt||d.request.createdAt,title:'Pedido rejeitado',text:d.request.decisionReason||'Rejeição registrada.'});
@@ -107,4 +109,6 @@ async function act(url,body,success){
   try{await json(url,{method:'POST',body:JSON.stringify(body)});toast(success);await loadCases();await selectCase(state.selectedId);}catch(e){toast(e.message);}
 }
 
-document.addEventListener('DOMContentLoaded',init);
+function bootstrap(){init().catch(e=>{state.initialized=false;toast(e.message);});}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootstrap,{once:true});
+else bootstrap();
