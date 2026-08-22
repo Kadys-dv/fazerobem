@@ -67,7 +67,7 @@ jobs:
 
           redis_ready=false
           for i in {1..40}; do
-            if redis-cli -h 127.0.0.1 -p 6379 ping 2>/dev/null | grep -q PONG; then
+            if docker exec fazerobem-pilot-redis redis-cli ping 2>/dev/null | grep -q PONG; then
               redis_ready=true
               break
             fi
@@ -75,10 +75,10 @@ jobs:
           done
           if [ "$redis_ready" != "true" ]; then
             docker logs fazerobem-pilot-redis || true
-            echo "Redis did not become ready on 127.0.0.1:6379" >&2
+            echo "Redis did not become ready inside container" >&2
             exit 1
           fi
-          redis-cli -h 127.0.0.1 -p 6379 ping | grep -q PONG
+          docker exec fazerobem-pilot-redis redis-cli ping | grep -q PONG
 
       - name: Start application
         shell: bash
