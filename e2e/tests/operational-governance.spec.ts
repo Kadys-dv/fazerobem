@@ -20,6 +20,16 @@ async function login(page: Page, email: string) {
   expect(body.email).toBe(email);
 }
 
+async function completeMemberOnboarding(page: Page) {
+  await expect(page.locator('#onboardingDialog')).toBeVisible({ timeout: 10_000 });
+  await page.locator('#acceptTerms').check();
+  await page.locator('#acceptPrivacy').check();
+  await page.locator('#acceptRules').check();
+  await page.getByRole('button', { name: 'Concluir primeiro acesso' }).click();
+  await expect(page.locator('#toast')).toContainText('Primeiro acesso concluído');
+  await expect(page.locator('#onboardingDialog')).not.toBeVisible();
+}
+
 async function logout(page: Page) {
   await page.goto('/');
   await page.getByRole('button', { name: 'Sair' }).click();
@@ -65,6 +75,7 @@ test('full aid governance settles approved aid through signed sandbox webhook an
 
   await login(page, 'member@demo.local');
   await expect(page.locator('#memberRole')).toHaveText('MEMBER');
+  await completeMemberOnboarding(page);
 
   await page.locator('#contributionAmount').fill('50,00');
   await page.locator('#contributionConsent').check();
