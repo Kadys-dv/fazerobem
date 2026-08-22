@@ -1,0 +1,80 @@
+name: go-live-readiness
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  go-live-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: readiness
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d readiness"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Validate operational scripts syntax
+        run: |
+          bash -n scripts/backup.sh
+          bash -n scripts/restore.sh
+          bash -n scripts/external-health-check.sh
+
+      - name: Verify backup fails closed without DB_URL
+        run: |
+          if ./scripts/backup.sh >/tmp/backup.out 2>/tmp/backup.err; then
+            echo "backup deveria falhar sem DB_URL"
+            exit 1
+          fi
+
+      - name: Backup and restore rehearsal
+        env:
+          DB_URL: postgresql://postgres:postgres@localhost:5432/readiness
+        run: |
+          mkdir -p target/readiness-backups
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -c 'create table readiness_marker(id integer primary key, value text not null);'
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -c "insert into readiness_marker values (1, 'before-backup');"
+          backup_path="$(BACKUP_DIRECTORY=target/readiness-backups ./scripts/backup.sh)"
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -c 'delete from readiness_marker;'
+          test "$(psql "$DB_URL" -Atc 'select count(*) from readiness_marker;')" = "0"
+          RESTORE_CONFIRMATION=RESTORE_STAGING ./scripts/restore.sh "$backup_path"
+          test "$(psql "$DB_URL" -Atc 'select value from readiness_marker where id=1;')" = "before-backup"
+
+      - name: External health check rehearsal
+        run: |
+          mkdir -p target/health/actuator
+          printf '{"status":"UP"}\n' > target/health/actuator/health
+          (cd target/health && python3 -m http.server 18080 >/tmp/readiness-health.log 2>&1 &)
+          sleep 1
+          ALLOW_HTTP_FOR_TEST=true STAGING_BASE_URL=http://127.0.0.1:18080 ./scripts/external-health-check.sh
+
+      - name: Payment freeze gate tests
+        run: mvn -B -Dtest=PaymentOperationGateTest test
+
+      - name: Publish rehearsal evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase9-go-live-readiness-evidence
+          if-no-files-found: warn
+          path: |
+            target/readiness-backups/*.sha256
+            target/surefire-reports/TEST-br.com.ajudamutua.payment.PaymentOperationGateTest.xml
