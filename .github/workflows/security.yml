@@ -144,6 +144,7 @@ jobs:
           REDIS_HOST: localhost
           REDIS_PORT: '6379'
           KMS_PROVIDER: local
+          APP_SECURITY_MFA_REQUIRED_FOR_PRIVILEGED: 'false'
           OTEL_EXPORTER_OTLP_ENDPOINT: http://localhost:4318/v1/traces
         run: |
           export DB_PASSWORD="$CI_DB_PASSWORD"
@@ -182,7 +183,7 @@ jobs:
         working-directory: e2e
         env:
           BASE_URL: http://localhost:8080
-        run: npx playwright test tests/member-flow.spec.ts tests/operational-governance.spec.ts
+        run: npx playwright test tests/member-flow.spec.ts tests/operational-governance.spec.ts --workers=1
       - name: Show application log on failure
         if: failure()
         run: cat /tmp/fazerobem-app.log || true
