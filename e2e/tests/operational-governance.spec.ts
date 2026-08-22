@@ -1,8 +1,10 @@
+import { createHmac } from 'node:crypto';
 import { test, expect, Page } from '@playwright/test';
 
 test.describe.configure({ retries: 0 });
 
 const DEMO_PASSWORD = 'Demo12345!';
+const WEBHOOK_SECRET = process.env.SANDBOX_WEBHOOK_SECRET || '';
 
 async function login(page: Page, email: string) {
   await page.goto('/');
@@ -56,7 +58,8 @@ async function openOperationalCase(page: Page, aidId: string, reason: string, ro
   await expect(page.locator('#caseReason')).toHaveText(reason);
 }
 
-test('full aid governance requires analyst screening and two distinct approvers with audit trail', async ({ page }) => {
+test('full aid governance settles approved aid through signed sandbox webhook and ledger', async ({ page }) => {
+  expect(WEBHOOK_SECRET.length, 'SANDBOX_WEBHOOK_SECRET must be available to the live E2E').toBeGreaterThanOrEqual(16);
   const reason = `Governança E2E ${Date.now()}`;
 
   await login(page, 'member@demo.local');
@@ -130,14 +133,62 @@ test('full aid governance requires analyst screening and two distinct approvers 
   await logout(page);
 
   await login(page, 'admin@demo.local');
+  await openOperationalCase(page, aidId, reason, 'ADMIN');
+  await expect(page.locator('#paymentActions')).toBeVisible();
+  await expect(page.locator('#paymentList')).toContainText('Nenhuma tentativa de pagamento registrada');
+  await expect(page.locator('#initiatePaymentButton')).toBeEnabled();
+  await page.locator('#initiatePaymentButton').click();
+  await expect(page.locator('#toast')).toContainText('Pagamento sandbox iniciado');
+  await expect(page.locator('#paymentList')).toContainText('Processando');
+
+  const attemptsResponse = await page.request.get(`/api/v1/payments/${aidId}`);
+  expect(attemptsResponse.ok(), `payment attempts failed with ${attemptsResponse.status()}: ${await attemptsResponse.text()}`).toBeTruthy();
+  const attempts = await attemptsResponse.json();
+  expect(attempts).toHaveLength(1);
+  expect(attempts[0].status).toBe('PROCESSING');
+  const providerReference = attempts[0].providerReference as string;
+  expect(providerReference).toBeTruthy();
+
+  const webhookBody = JSON.stringify({ providerReference, status: 'SETTLED' });
+  const timestamp = new Date().toISOString();
+  const signature = createHmac('sha256', WEBHOOK_SECRET).update(`${timestamp}.${webhookBody}`).digest('hex');
+  const webhookResponse = await page.request.post('/api/v1/sandbox/webhooks/payment', {
+    headers: {
+      'X-Event-Id': `e2e-${Date.now()}`,
+      'X-Timestamp': timestamp,
+      'X-Signature': signature,
+      'Content-Type': 'application/json'
+    },
+    data: { providerReference, status: 'SETTLED' }
+  });
+  expect(webhookResponse.status(), `sandbox webhook failed: ${await webhookResponse.text()}`).toBe(204);
+
+  await page.locator('#refreshButton').click();
+  await expect(page.locator('#caseStatus')).toHaveText('Pago');
+  await expect(page.locator('#paymentList')).toContainText('Liquidado');
+  await expect(page.locator('#historyList')).toContainText('Auxílio pago');
+  await expect(page.locator('#initiatePaymentButton')).toBeDisabled();
+
   const detailResponse = await page.request.get(`/api/v1/operations/aid-requests/${aidId}`);
   expect(detailResponse.ok(), `case detail failed with ${detailResponse.status()}: ${await detailResponse.text()}`).toBeTruthy();
   const detail = await detailResponse.json();
-  expect(detail.request.status).toBe('APPROVED');
+  expect(detail.request.status).toBe('PAID');
   expect(detail.analyses).toHaveLength(1);
   expect(detail.fraudScreening.status).toBe('CLEARED');
   expect(detail.approvals).toHaveLength(2);
   expect(new Set(detail.approvals.map((x: { approverUserId: string }) => x.approverUserId)).size).toBe(2);
+
+  const settledAttemptsResponse = await page.request.get(`/api/v1/payments/${aidId}`);
+  const settledAttempts = await settledAttemptsResponse.json();
+  expect(settledAttempts).toHaveLength(1);
+  expect(settledAttempts[0].status).toBe('SETTLED');
+
+  const ledgerResponse = await page.request.get('/api/v1/ledger');
+  expect(ledgerResponse.ok(), `ledger failed with ${ledgerResponse.status()}: ${await ledgerResponse.text()}`).toBeTruthy();
+  const ledger = await ledgerResponse.json();
+  const aidEntries = ledger.filter((x: { aidRequestId?: string; type: string; amount: number }) => x.aidRequestId === aidId && x.type === 'AID_PAYMENT');
+  expect(aidEntries).toHaveLength(1);
+  expect(Number(aidEntries[0].amount)).toBe(-10);
 
   const auditResponse = await page.request.get('/api/v1/audit-events');
   expect(auditResponse.ok(), `audit failed with ${auditResponse.status()}: ${await auditResponse.text()}`).toBeTruthy();
@@ -148,4 +199,6 @@ test('full aid governance requires analyst screening and two distinct approvers 
   expect(events.some((x: { action: string }) => x.action === 'AID_ANALYZED')).toBeTruthy();
   expect(events.some((x: { action: string }) => x.action === 'FRAUD_SCREENING_COMPLETED')).toBeTruthy();
   expect(events.filter((x: { action: string }) => x.action === 'AID_APPROVED')).toHaveLength(2);
+  expect(events.some((x: { action: string }) => x.action === 'PAYMENT_INITIATED')).toBeTruthy();
+  expect(events.some((x: { action: string }) => x.action === 'PAYMENT_SETTLED')).toBeTruthy();
 });
