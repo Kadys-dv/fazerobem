@@ -1,0 +1,19 @@
+{
+  "name": "Fazer o Bem",
+  "short_name": "Fazer o Bem",
+  "description": "Comunidade de ajuda mútua com transparência, critérios públicos e governança.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f7f5",
+  "theme_color": "#173f35",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -57,10 +57,11 @@ public class SecurityConfig {
 
         http.authorizeHttpRequests(a -> a
                         .requestMatchers(
-                                "/", "/index.html",
+                                "/", "/index.html", "/app.css", "/app.js",
+                                "/manifest.webmanifest", "/sw.js", "/icon.svg",
                                 "/api/v1/transparency", "/api/v1/transparency/ledger",
                                 "/api/v1/aid-policies",
-                                "/api/v1/auth/register", "/api/v1/auth/csrf",
+                                "/api/v1/auth/register", "/api/v1/auth/csrf", "/api/v1/auth/me",
                                 "/api/v1/sandbox/webhooks/payment",
                                 "/api/v1/transparency/reports/**",
                                 "/webauthn/authenticate/options", "/login/webauthn", "/login/webauthn.js")
@@ -76,7 +77,7 @@ public class SecurityConfig {
                         .allowedOrigins(origins.split(",")))
                 .headers(h -> h.contentSecurityPolicy(c -> c.policyDirectives(
                         "default-src 'self'; object-src 'none'; frame-ancestors 'none'; " +
-                        "base-uri 'self'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'")))
+                        "base-uri 'self'; form-action 'self'; script-src 'self'; style-src 'self'")))
                 .sessionManagement(sm -> sm
                         .sessionFixation(sf -> sf.migrateSession())
                         .maximumSessions(1))
@@ -88,10 +89,12 @@ public class SecurityConfig {
                         .failureHandler((req, res, ex) -> {
                             String email = req.getParameter("username");
                             loginAttempts.failure(email, req.getRemoteAddr());
-                            res.sendRedirect("/login?error");
+                            res.sendRedirect("/?loginError=1");
                         })
                         .permitAll())
-                .logout(l -> l.permitAll())
+                .logout(l -> l
+                        .logoutSuccessHandler((req, res, auth) -> res.sendRedirect("/"))
+                        .permitAll())
                 .addFilterBefore(rate, UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(mfa, UsernamePasswordAuthenticationFilter.class);
 

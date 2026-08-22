@@ -99,3 +99,96 @@ jobs:
         run: npx playwright install --with-deps chromium
       - working-directory: e2e
         run: npx playwright test tests/security.spec.ts --grep "virtual authenticator"
+
+  pwa-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Generate ephemeral CI secrets
+        shell: bash
+        run: |
+          DB_PASSWORD_VALUE=$(openssl rand -hex 24)
+          APP_KEY_VALUE=$(openssl rand -base64 32 | tr -d '\n')
+          WEBHOOK_SECRET_VALUE=$(openssl rand -hex 32)
+          echo "::add-mask::$DB_PASSWORD_VALUE"
+          echo "::add-mask::$APP_KEY_VALUE"
+          echo "::add-mask::$WEBHOOK_SECRET_VALUE"
+          echo "CI_DB_PASSWORD=$DB_PASSWORD_VALUE" >> "$GITHUB_ENV"
+          echo "APP_CRYPTO_MASTER_KEY_BASE64=$APP_KEY_VALUE" >> "$GITHUB_ENV"
+          echo "SANDBOX_WEBHOOK_SECRET=$WEBHOOK_SECRET_VALUE" >> "$GITHUB_ENV"
+      - name: Start PostgreSQL and Redis
+        shell: bash
+        run: |
+          docker run -d --name fazerobem-pg -e POSTGRES_DB=ajuda_mutua_ci -e POSTGRES_USER=ajuda_ci -e POSTGRES_PASSWORD="$CI_DB_PASSWORD" -p 5432:5432 postgres:17-alpine
+          docker run -d --name fazerobem-redis -p 6379:6379 redis:8-alpine
+      - name: Wait for dependencies
+        shell: bash
+        run: |
+          for i in {1..30}; do docker exec fazerobem-pg pg_isready -U ajuda_ci -d ajuda_mutua_ci && break; sleep 2; done
+          docker exec fazerobem-pg pg_isready -U ajuda_ci -d ajuda_mutua_ci
+          for i in {1..30}; do docker exec fazerobem-redis redis-cli ping | grep -q PONG && break; sleep 1; done
+          docker exec fazerobem-redis redis-cli ping | grep -q PONG
+      - name: Start application
+        shell: bash
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/ajuda_mutua_ci
+          DB_USER: ajuda_ci
+          REDIS_HOST: localhost
+          REDIS_PORT: '6379'
+          KMS_PROVIDER: local
+          OTEL_EXPORTER_OTLP_ENDPOINT: http://localhost:4318/v1/traces
+        run: |
+          export DB_PASSWORD="$CI_DB_PASSWORD"
+          nohup mvn -B spring-boot:run -Dspring-boot.run.profiles=dev > /tmp/fazerobem-app.log 2>&1 &
+          echo $! > /tmp/fazerobem-app.pid
+      - name: Wait for application
+        shell: bash
+        run: |
+          for i in {1..90}; do
+            if curl -fsS http://localhost:8080/api/v1/transparency > /dev/null; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/fazerobem-app.log
+          exit 1
+      - name: Validate public PWA and anonymous auth context
+        shell: bash
+        run: |
+          curl -fsS http://localhost:8080/ > /tmp/index.html
+          curl -fsS http://localhost:8080/app.css > /dev/null
+          curl -fsS http://localhost:8080/app.js > /dev/null
+          curl -fsS http://localhost:8080/manifest.webmanifest > /dev/null
+          curl -fsS http://localhost:8080/sw.js > /dev/null
+          curl -fsS http://localhost:8080/api/v1/auth/me > /tmp/me.json
+          grep -q "Fazer o Bem" /tmp/index.html
+          python - <<'PY'
+          import json
+          data=json.load(open('/tmp/me.json'))
+          assert data == {'authenticated': False}, data
+          PY
+      - name: Install browser E2E dependencies
+        working-directory: e2e
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+      - name: Run live member journey
+        working-directory: e2e
+        env:
+          BASE_URL: http://localhost:8080
+        run: npx playwright test tests/member-flow.spec.ts
+      - name: Show application log on failure
+        if: failure()
+        run: cat /tmp/fazerobem-app.log || true
+      - name: Stop services
+        if: always()
+        shell: bash
+        run: |
+          test -f /tmp/fazerobem-app.pid && kill "$(cat /tmp/fazerobem-app.pid)" || true
+          docker rm -f fazerobem-pg fazerobem-redis || true

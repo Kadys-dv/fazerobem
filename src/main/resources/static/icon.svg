@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Fazer o Bem">
+  <rect width="512" height="512" rx="120" fill="#173f35"/>
+  <path d="M256 390c-18-22-107-87-107-166 0-53 36-91 83-91 27 0 47 13 62 34 15-21 35-34 62-34 47 0 83 38 83 91 0 79-89 144-107 166l-38 43-38-43z" fill="#eef7f2"/>
+  <path d="M116 310c45-22 78-19 112 4 22 15 42 17 62 5 28-17 55-19 106 3" fill="none" stroke="#7bc7a9" stroke-width="26" stroke-linecap="round"/>
+</svg>
