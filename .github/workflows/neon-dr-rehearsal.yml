@@ -1,0 +1,137 @@
+name: neon-dr-rehearsal
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  neon-dr-rehearsal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DB_URL: ${{ secrets.NEON_STAGING_JDBC_URL }}
+      DB_USER: ${{ secrets.NEON_STAGING_DB_USER }}
+      DB_PASSWORD: ${{ secrets.NEON_STAGING_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate fail-closed staging configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DB_URL"
+          test -n "$DB_USER"
+          test -n "$DB_PASSWORD"
+          case "$DB_URL" in
+            jdbc:postgresql://*sslmode=require*) ;;
+            *) echo "JDBC URL must require TLS" >&2; exit 1 ;;
+          esac
+
+      - name: Resolve connection coordinates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import os, urllib.parse
+          jdbc=os.environ['DB_URL']
+          p=urllib.parse.urlparse(jdbc[len('jdbc:'):])
+          print(f'DB_HOST={p.hostname}')
+          print(f'DB_PORT={p.port or 5432}')
+          print(f'DB_NAME={p.path.lstrip("/")}')
+          PY
+
+      - name: Seed isolated synthetic recovery marker
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PGPASSWORD="$DB_PASSWORD" PGSSLMODE=require
+          docker run --rm --network host -e PGPASSWORD -e PGSSLMODE postgres:18-alpine \
+            psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 \
+            -c "DROP TABLE IF EXISTS public.dr_rehearsal_marker" \
+            -c "CREATE TABLE public.dr_rehearsal_marker (marker_id text PRIMARY KEY, created_at timestamptz NOT NULL)" \
+            -c "INSERT INTO public.dr_rehearsal_marker(marker_id,created_at) VALUES ('run-${GITHUB_RUN_ID}', clock_timestamp())"
+
+      - name: Create backup and record restore point
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PGPASSWORD="$DB_PASSWORD" PGSSLMODE=require
+          mkdir -p evidence
+          docker run --rm --network host -e PGPASSWORD -e PGSSLMODE -v "$PWD/evidence:/work" postgres:18-alpine \
+            pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -Fc -t public.dr_rehearsal_marker -f /work/dr-rehearsal.dump
+          BACKUP_EPOCH=$(date +%s)
+          BACKUP_SHA=$(sha256sum evidence/dr-rehearsal.dump | awk '{print $1}')
+          echo "BACKUP_EPOCH=$BACKUP_EPOCH" >> "$GITHUB_ENV"
+          echo "BACKUP_SHA=$BACKUP_SHA" >> "$GITHUB_ENV"
+
+      - name: Simulate scoped data loss
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PGPASSWORD="$DB_PASSWORD" PGSSLMODE=require
+          INCIDENT_EPOCH=$(date +%s)
+          echo "INCIDENT_EPOCH=$INCIDENT_EPOCH" >> "$GITHUB_ENV"
+          docker run --rm --network host -e PGPASSWORD -e PGSSLMODE postgres:18-alpine \
+            psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 \
+            -c "DROP TABLE public.dr_rehearsal_marker"
+
+      - name: Restore marker from backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PGPASSWORD="$DB_PASSWORD" PGSSLMODE=require
+          docker run --rm --network host -e PGPASSWORD -e PGSSLMODE -v "$PWD/evidence:/work" postgres:18-alpine \
+            pg_restore -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" --no-owner --no-privileges /work/dr-rehearsal.dump
+          RECOVERED_EPOCH=$(date +%s)
+          echo "RECOVERED_EPOCH=$RECOVERED_EPOCH" >> "$GITHUB_ENV"
+
+      - name: Verify recovery, invariants, RTO and RPO
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PGPASSWORD="$DB_PASSWORD" PGSSLMODE=require
+          marker=$(docker run --rm --network host -e PGPASSWORD -e PGSSLMODE postgres:18-alpine psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -Atc "select marker_id from public.dr_rehearsal_marker")
+          test "$marker" = "run-${GITHUB_RUN_ID}"
+          flyway=$(docker run --rm --network host -e PGPASSWORD -e PGSSLMODE postgres:18-alpine psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -Atc "select count(*) from flyway_schema_history where success and version in ('1','2','3','4','5','6','7','8')")
+          ledger_lock=$(docker run --rm --network host -e PGPASSWORD -e PGSSLMODE postgres:18-alpine psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -Atc "select count(*) from ledger_chain_lock")
+          audit_lock=$(docker run --rm --network host -e PGPASSWORD -e PGSSLMODE postgres:18-alpine psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -Atc "select count(*) from audit_chain_lock")
+          test "$flyway" = "8"
+          test "$ledger_lock" = "1"
+          test "$audit_lock" = "1"
+          RTO_SECONDS=$((RECOVERED_EPOCH-INCIDENT_EPOCH))
+          RPO_SECONDS=$((INCIDENT_EPOCH-BACKUP_EPOCH))
+          test "$RTO_SECONDS" -le 1800
+          test "$RPO_SECONDS" -le 300
+          {
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "commit=${GITHUB_SHA}"
+            echo "backup_sha256=${BACKUP_SHA}"
+            echo "backup_epoch=${BACKUP_EPOCH}"
+            echo "incident_epoch=${INCIDENT_EPOCH}"
+            echo "recovered_epoch=${RECOVERED_EPOCH}"
+            echo "rto_seconds=${RTO_SECONDS}"
+            echo "rpo_seconds=${RPO_SECONDS}"
+            echo "flyway_v1_v8=8"
+            echo "ledger_chain_lock=1"
+            echo "audit_chain_lock=1"
+            echo "scope=isolated_synthetic_database_object_recovery"
+          } > evidence/dr-rehearsal-evidence.txt
+
+      - name: Cleanup synthetic marker
+        if: always()
+        shell: bash
+        run: |
+          export PGPASSWORD="$DB_PASSWORD" PGSSLMODE=require
+          docker run --rm --network host -e PGPASSWORD -e PGSSLMODE postgres:18-alpine \
+            psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "DROP TABLE IF EXISTS public.dr_rehearsal_marker" || true
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: neon-dr-rehearsal-${{ github.run_id }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 30
