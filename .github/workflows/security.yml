@@ -1,10 +1,43 @@
 name: security
+
 on: [push, pull_request]
+
 permissions:
   contents: read
   security-events: write
+  pull-requests: read
+
 jobs:
   build-sbom-sca:
+    runs-on: ubuntu-latest
+    env:
+      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Build, tests, Testcontainers and SBOM
+        run: mvn -B verify
+      - name: OWASP Dependency-Check
+        if: ${{ env.NVD_API_KEY != '' }}
+        run: mvn -B org.owasp:dependency-check-maven:13.0.0:check -DnvdApiKey="$NVD_API_KEY"
+      - name: Dependency-Check configuration notice
+        if: ${{ env.NVD_API_KEY == '' }}
+        run: echo "::warning::NVD_API_KEY is not configured; OWASP NVD scan was not executed. Configure the repository secret to make this gate mandatory."
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-artifacts
+          if-no-files-found: ignore
+          path: |
+            target/bom.*
+            target/dependency-check-report.*
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -13,46 +46,53 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - run: mvn -B verify
-      - run: mvn -B org.owasp:dependency-check-maven:13.0.0:check
-        env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+      - name: Dependency baseline fallback
+        run: mvn -B dependency:tree -DoutputFile=target/dependency-tree.txt
+      - name: GitHub Dependency Review
+        if: ${{ vars.DEPENDENCY_GRAPH_ENABLED == 'true' }}
+        uses: actions/dependency-review-action@v4
+      - name: Dependency Graph configuration notice
+        if: ${{ vars.DEPENDENCY_GRAPH_ENABLED != 'true' }}
+        run: echo "::warning::GitHub Dependency Graph is not enabled for this repository. Enable it and set repository variable DEPENDENCY_GRAPH_ENABLED=true to activate dependency-review-action."
       - uses: actions/upload-artifact@v4
         with:
-          name: security-artifacts
-          path: |
-            target/bom.*
-            target/dependency-check-report.*
-  dependency-review:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
+          name: dependency-tree
+          path: target/dependency-tree.txt
+
   codeql:
     runs-on: ubuntu-latest
-    strategy:
-      matrix: { language: [java-kotlin] }
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
       - uses: github/codeql-action/init@v3
-        with: { languages: '${{ matrix.language }}' }
-      - uses: github/codeql-action/autobuild@v3
+        with:
+          languages: java-kotlin
+          build-mode: manual
+      - name: Explicit CodeQL build
+        run: mvn -B -DskipTests package
       - uses: github/codeql-action/analyze@v3
+
   secret-scan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   e2e-static:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '22' }
+        with:
+          node-version: '22'
       - working-directory: e2e
         run: npm install
       - working-directory: e2e
