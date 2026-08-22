@@ -50,16 +50,35 @@ jobs:
       - name: Wait for dependencies
         shell: bash
         run: |
+          postgres_ready=false
           for i in {1..40}; do
-            docker exec fazerobem-pilot-pg pg_isready -U ajuda_pilot -d ajuda_mutua_pilot >/dev/null 2>&1 && break
+            if pg_isready -h 127.0.0.1 -p 5432 -U ajuda_pilot -d ajuda_mutua_pilot >/dev/null 2>&1; then
+              postgres_ready=true
+              break
+            fi
             sleep 2
           done
-          docker exec fazerobem-pilot-pg pg_isready -U ajuda_pilot -d ajuda_mutua_pilot
+          if [ "$postgres_ready" != "true" ]; then
+            docker logs fazerobem-pilot-pg || true
+            echo "PostgreSQL did not become ready on 127.0.0.1:5432" >&2
+            exit 1
+          fi
+          pg_isready -h 127.0.0.1 -p 5432 -U ajuda_pilot -d ajuda_mutua_pilot
+
+          redis_ready=false
           for i in {1..40}; do
-            docker exec fazerobem-pilot-redis redis-cli ping 2>/dev/null | grep -q PONG && break
+            if redis-cli -h 127.0.0.1 -p 6379 ping 2>/dev/null | grep -q PONG; then
+              redis_ready=true
+              break
+            fi
             sleep 1
           done
-          docker exec fazerobem-pilot-redis redis-cli ping | grep -q PONG
+          if [ "$redis_ready" != "true" ]; then
+            docker logs fazerobem-pilot-redis || true
+            echo "Redis did not become ready on 127.0.0.1:6379" >&2
+            exit 1
+          fi
+          redis-cli -h 127.0.0.1 -p 6379 ping | grep -q PONG
 
       - name: Start application
         shell: bash
