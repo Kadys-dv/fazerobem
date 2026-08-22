@@ -53,8 +53,12 @@ class FreshDatabaseApplicationStartupTest {
         Integer recoveryTable = jdbc.queryForObject(
                 "select count(*) from information_schema.tables where table_schema='public' and table_name='account_recovery_approvals'",
                 Integer.class);
+        Integer paymentVersionColumn = jdbc.queryForObject(
+                "select count(*) from information_schema.columns where table_schema='public' and table_name='payment_attempts' and column_name='version'",
+                Integer.class);
 
-        assertEquals(7, migrations);
+        assertEquals(8, migrations);
         assertEquals(1, recoveryTable);
+        assertEquals(1, paymentVersionColumn);
     }
 }
