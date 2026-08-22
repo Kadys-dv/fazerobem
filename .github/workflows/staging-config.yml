@@ -94,31 +94,36 @@ jobs:
           export SANDBOX_WEBHOOK_SECRET="$STAGING_WEBHOOK_SECRET"
           nohup mvn -B spring-boot:run -Dspring-boot.run.profiles=staging > /tmp/staging-positive.log 2>&1 &
           echo $! > /tmp/staging-positive.pid
-          rm -f /tmp/staging-health.json /tmp/staging-health.tmp
           for i in {1..90}; do
-            if curl -fsS http://localhost:18080/actuator/health -o /tmp/staging-health.tmp; then
-              mv /tmp/staging-health.tmp /tmp/staging-health.json
+            if curl -fsS http://localhost:18080/api/v1/transparency -o /tmp/staging-readiness.json; then
               break
             fi
-            rm -f /tmp/staging-health.tmp
             sleep 2
           done
-          if [ ! -s /tmp/staging-health.json ]; then
-            echo "ERRO: staging não retornou health válido"
+          if [ ! -s /tmp/staging-readiness.json ]; then
+            echo "ERRO: staging não ficou pronto"
             cat /tmp/staging-positive.log
             exit 1
           fi
-          curl -fsS http://localhost:18080/actuator/health -o /tmp/staging-health.json
 
-      - name: Validate staging health and hardened profile
+          ACTUATOR_STATUS=$(curl -sS -o /tmp/staging-health.json -w '%{http_code}' http://localhost:18080/actuator/health || true)
+          echo "$ACTUATOR_STATUS" > /tmp/staging-health.status
+
+      - name: Validate staging readiness, actuator exposure and hardened profile
         shell: bash
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
 
-          health = json.loads(Path('/tmp/staging-health.json').read_text())
-          assert health.get('status') == 'UP', health
+          readiness = json.loads(Path('/tmp/staging-readiness.json').read_text())
+          assert isinstance(readiness, dict), readiness
+
+          status = Path('/tmp/staging-health.status').read_text().strip()
+          assert status in {'200', '401', '403'}, f'unexpected actuator status: {status}'
+          if status == '200':
+              health = json.loads(Path('/tmp/staging-health.json').read_text())
+              assert health == {'status': 'UP'}, f'actuator exposed unexpected details: {health}'
 
           text = Path('src/main/resources/application-staging.yml').read_text()
           assert 'http://localhost:8080' not in text, 'staging contains development origin'
