@@ -71,17 +71,26 @@ $('onboardingForm')?.addEventListener('submit',async event=>{
   }catch(error){$('onboardingMessage').textContent=error.message}
 });
 
-document.addEventListener('member-session-ready',()=>{
+function refreshMemberFeatures(){
   if(state.me?.authenticated&&state.me.role==='MEMBER'){
     void Promise.all([ensureMemberOnboarding(),loadMemberContributions()]);
+  }else{
+    state.memberOnboarded=false;
+    if($('onboardingDialog')?.open)$('onboardingDialog').close();
   }
-});
+}
+
+document.addEventListener('member-session-ready',refreshMemberFeatures);
+
+const baseLoadSession=loadSession;
+loadSession=async function(){
+  await baseLoadSession();
+  document.dispatchEvent(new Event('member-session-ready'));
+};
 
 async function bootstrapMemberFeatures(){
   for(let i=0;i<100&&state.me===null;i++)await new Promise(resolve=>setTimeout(resolve,50));
-  if(state.me?.authenticated&&state.me.role==='MEMBER'){
-    document.dispatchEvent(new Event('member-session-ready'));
-  }
+  refreshMemberFeatures();
 }
 
 void bootstrapMemberFeatures();
