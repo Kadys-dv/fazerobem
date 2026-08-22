@@ -32,6 +32,16 @@ A Fase 8 prepara o Fazer o Bem para um piloto controlado **sem dinheiro real**.
 - banco/Redis/storage isolados;
 - configuração fail-closed para chaves ausentes.
 
+### Issue #18 — Pilot simulation
+- 50 membros fictícios por padrão;
+- contribuições e pedidos sandbox em sessões independentes;
+- múltiplas submissões concorrentes;
+- amostra processada integralmente até `PAID`;
+- validação de dupla aprovação, idempotência, replay, ledger e auditoria;
+- gate reproduzível em CI pelo workflow `pilot-simulation`.
+
+Evidência e critérios executáveis: [`PILOT_SIMULATION.md`](PILOT_SIMULATION.md).
+
 ## Regra de segurança
 
 A conclusão desta fase não autoriza PIX real, custódia, cartão ou qualquer movimentação financeira real. Revisão jurídica/regulatória, pentest independente e provedor autorizado continuam sendo gates externos obrigatórios.
