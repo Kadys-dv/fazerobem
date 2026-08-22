@@ -112,9 +112,15 @@ jobs:
       - name: Generate ephemeral CI secrets
         shell: bash
         run: |
-          echo "CI_DB_PASSWORD=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
-          echo "APP_CRYPTO_MASTER_KEY_BASE64=$(openssl rand -base64 32 | tr -d '\n')" >> "$GITHUB_ENV"
-          echo "SANDBOX_WEBHOOK_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          DB_PASSWORD_VALUE=$(openssl rand -hex 24)
+          APP_KEY_VALUE=$(openssl rand -base64 32 | tr -d '\n')
+          WEBHOOK_SECRET_VALUE=$(openssl rand -hex 32)
+          echo "::add-mask::$DB_PASSWORD_VALUE"
+          echo "::add-mask::$APP_KEY_VALUE"
+          echo "::add-mask::$WEBHOOK_SECRET_VALUE"
+          echo "CI_DB_PASSWORD=$DB_PASSWORD_VALUE" >> "$GITHUB_ENV"
+          echo "APP_CRYPTO_MASTER_KEY_BASE64=$APP_KEY_VALUE" >> "$GITHUB_ENV"
+          echo "SANDBOX_WEBHOOK_SECRET=$WEBHOOK_SECRET_VALUE" >> "$GITHUB_ENV"
       - name: Start PostgreSQL and Redis
         shell: bash
         run: |
