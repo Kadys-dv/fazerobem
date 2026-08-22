@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Fazer o Bem — Operações</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/operations.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <span class="brand-mark">FB</span>
+      <span><strong>Fazer o Bem</strong><small>Painel operacional</small></span>
+    </a>
+    <div class="top-actions">
+      <span id="operatorIdentity" class="operator-identity"></span>
+      <a class="ghost" href="/">Área principal</a>
+    </div>
+  </header>
+
+  <main class="ops-main">
+    <section class="ops-header">
+      <div>
+        <span class="eyebrow">Governança de auxílio</span>
+        <h1>Fila operacional</h1>
+        <p>Analise elegibilidade, documentos, risco e decisões sem alterar a trilha histórica do caso.</p>
+      </div>
+      <div class="ops-filters">
+        <label>Status
+          <select id="statusFilter">
+            <option value="ALL">Todos</option>
+            <option value="PENDING" selected>Pendentes</option>
+            <option value="APPROVED">Aprovados</option>
+            <option value="REJECTED">Rejeitados</option>
+            <option value="PAID">Pagos</option>
+          </select>
+        </label>
+        <button id="refreshButton" class="secondary" type="button">Atualizar fila</button>
+      </div>
+    </section>
+
+    <section class="ops-grid">
+      <aside class="case-list-panel">
+        <div class="panel-title"><strong>Solicitações</strong><span id="caseCount">0</span></div>
+        <div id="caseList" class="case-list"></div>
+      </aside>
+
+      <section id="caseWorkspace" class="case-workspace empty-state">
+        <div id="emptyCase">
+          <h2>Selecione um pedido</h2>
+          <p>Os detalhes operacionais e a trilha de decisão aparecem aqui.</p>
+        </div>
+
+        <div id="caseContent" class="hidden">
+          <div class="case-heading">
+            <div>
+              <span id="caseStatus" class="status-pill"></span>
+              <h2 id="caseTitle"></h2>
+              <p id="caseMeta"></p>
+            </div>
+            <div class="amount-box"><small>Valor solicitado</small><strong id="caseAmount"></strong></div>
+          </div>
+
+          <div class="detail-grid">
+            <article class="ops-card">
+              <h3>Motivo</h3>
+              <p id="caseReason"></p>
+            </article>
+            <article class="ops-card">
+              <h3>Elegibilidade</h3>
+              <div id="eligibilitySummary"></div>
+            </article>
+          </div>
+
+          <article class="ops-card">
+            <div class="panel-title"><strong>Documentos protegidos</strong><span id="documentCount">0</span></div>
+            <div id="documentList" class="timeline"></div>
+          </article>
+
+          <article class="ops-card">
+            <h3>Histórico do caso</h3>
+            <div id="historyList" class="timeline"></div>
+          </article>
+
+          <section id="analystActions" class="role-actions hidden">
+            <article class="ops-card">
+              <h3>Parecer do analista</h3>
+              <form id="analysisForm">
+                <label>Parecer
+                  <textarea id="analysisOpinion" maxlength="1000" required></textarea>
+                </label>
+                <button class="primary" type="submit">Registrar parecer</button>
+              </form>
+            </article>
+
+            <article class="ops-card">
+              <h3>Triagem antifraude</h3>
+              <form id="fraudForm" class="form-grid">
+                <label>Status
+                  <select id="fraudStatus" required>
+                    <option value="CLEARED">Liberado</option>
+                    <option value="REVIEW_REQUIRED">Revisão necessária</option>
+                    <option value="BLOCKED">Bloqueado</option>
+                  </select>
+                </label>
+                <label>Risco (0–100)
+                  <input id="riskScore" type="number" min="0" max="100" value="0" required>
+                </label>
+                <label class="wide">Sinais/flags
+                  <textarea id="fraudFlags" maxlength="1000"></textarea>
+                </label>
+                <label class="wide">Nota
+                  <textarea id="fraudNote" maxlength="1000" required></textarea>
+                </label>
+                <button class="primary" type="submit">Concluir triagem</button>
+              </form>
+            </article>
+          </section>
+
+          <section id="approverActions" class="role-actions hidden">
+            <article class="ops-card">
+              <h3>Decisão do aprovador</h3>
+              <form id="approvalForm">
+                <label>Nota de aprovação
+                  <textarea id="approvalNote" maxlength="500" required></textarea>
+                </label>
+                <button class="primary" type="submit">Registrar aprovação</button>
+              </form>
+              <form id="rejectionForm" class="reject-form">
+                <label>Motivo da rejeição
+                  <textarea id="rejectionNote" maxlength="500" required></textarea>
+                </label>
+                <button class="danger-button" type="submit">Rejeitar pedido</button>
+              </form>
+            </article>
+          </section>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div id="toast" class="ops-toast hidden" role="status" aria-live="polite"></div>
+  <script src="/operations.js" defer></script>
+</body>
+</html>
