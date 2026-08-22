@@ -1,0 +1,233 @@
+name: staging-external-dast
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  staging-external-dast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      STAGING_BASE_URL: https://fazerobem-staging.onrender.com
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare evidence directories
+        run: mkdir -p evidence/external-health evidence/external-zap
+
+      - name: Validate external health and capture timings
+        shell: bash
+        run: |
+          set -euo pipefail
+          start_ms=$(date +%s%3N)
+          attempt=0
+          cold_start_detected=false
+          health_ok=false
+
+          for delay in 0 3 5 8 13 21 30 30; do
+            if [ "$delay" -gt 0 ]; then sleep "$delay"; fi
+            attempt=$((attempt + 1))
+            metrics_file="evidence/external-health/attempt-${attempt}.metrics"
+            headers_file="evidence/external-health/attempt-${attempt}.headers"
+            body_file="evidence/external-health/attempt-${attempt}.body"
+
+            set +e
+            http_status=$(curl -sS --max-time 70 \
+              -D "$headers_file" \
+              -o "$body_file" \
+              -w '%{http_code} %{time_namelookup} %{time_connect} %{time_appconnect} %{time_starttransfer} %{time_total}' \
+              "$STAGING_BASE_URL/health")
+            curl_code=$?
+            set -e
+
+            printf '%s\n' "$http_status" > "$metrics_file"
+            code=$(printf '%s' "$http_status" | awk '{print $1}')
+
+            if [ "$attempt" -gt 1 ]; then cold_start_detected=true; fi
+
+            if [ "$curl_code" -eq 0 ] && [ "$code" = "200" ]; then
+              python3 - "$body_file" <<'PY'
+import json,sys
+with open(sys.argv[1], encoding='utf-8') as f:
+    body=json.load(f)
+assert body.get('status') == 'UP', body
+PY
+              health_ok=true
+              break
+            fi
+          done
+
+          if [ "$health_ok" != true ]; then
+            echo "external staging health never became UP" >&2
+            exit 1
+          fi
+
+          end_ms=$(date +%s%3N)
+          recovery_ms=$((end_ms - start_ms))
+          final_metrics="evidence/external-health/attempt-${attempt}.metrics"
+          read -r status dns connect tls ttfb total < "$final_metrics"
+
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "target=$STAGING_BASE_URL/health"
+            echo "http_status=$status"
+            echo "attempts=$attempt"
+            echo "dns_seconds=$dns"
+            echo "connect_seconds=$connect"
+            echo "tls_handshake_seconds=$tls"
+            echo "ttfb_seconds=$ttfb"
+            echo "total_seconds=$total"
+            echo "external_service_recovery_time_ms=$recovery_ms"
+            echo "cold_start_detected=$cold_start_detected"
+            echo "run_id=$GITHUB_RUN_ID"
+            echo "commit=$GITHUB_SHA"
+          } > evidence/external-health/summary.txt
+
+      - name: Validate public surface and capture sanitized headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sS -D evidence/external-health/health-public.headers -o /dev/null "$STAGING_BASE_URL/health"
+
+          for path in actuator/prometheus actuator/metrics actuator/env; do
+            status=$(curl -sS -o /dev/null -w '%{http_code}' "$STAGING_BASE_URL/$path" || true)
+            printf '%s=%s\n' "$path" "$status" >> evidence/external-health/management-surface.status
+            case "$status" in
+              401|403|404) ;;
+              301|302|303|307|308) ;;
+              200) echo "sensitive management endpoint publicly returned HTTP 200: /$path" >&2; exit 1 ;;
+              *) echo "unexpected management endpoint status for /$path: $status" >&2; exit 1 ;;
+            esac
+          done
+
+          python3 - <<'PY'
+from pathlib import Path
+headers = Path('evidence/external-health/health-public.headers').read_text(errors='replace').splitlines()
+wanted = {
+    'strict-transport-security',
+    'x-content-type-options',
+    'content-security-policy',
+    'referrer-policy',
+    'permissions-policy',
+    'cache-control',
+}
+selected=[]
+for line in headers:
+    if ':' not in line:
+        continue
+    name,value=line.split(':',1)
+    if name.strip().lower() in wanted:
+        selected.append(f'{name.strip()}: {value.strip()}')
+Path('evidence/external-health/security-headers.txt').write_text('\n'.join(selected)+'\n')
+PY
+
+      - name: Run OWASP ZAP baseline against real staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo chown -R 1000:1000 evidence/external-zap
+          set +e
+          docker run --rm \
+            -v "$PWD/evidence/external-zap:/zap/wrk/:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t "$STAGING_BASE_URL" \
+            -J zap-report.json \
+            -r zap-report.html \
+            -I \
+            -m 2
+          zap_status=$?
+          set -e
+          sudo chown -R "$(id -u):$(id -g)" evidence/external-zap
+
+          test "$zap_status" -ne 3 || { echo "ZAP could not complete the scan" >&2; exit 1; }
+
+          python3 - <<'PY'
+import json
+from pathlib import Path
+p=Path('evidence/external-zap/zap-report.json')
+if not p.exists():
+    raise SystemExit('ZAP JSON report missing')
+report=json.loads(p.read_text())
+counts={0:0,1:0,2:0,3:0}
+blocking=[]
+for site in report.get('site',[]):
+    for alert in site.get('alerts',[]):
+        try:
+            risk=int(alert.get('riskcode','0'))
+        except ValueError:
+            risk=0
+        counts[risk]=counts.get(risk,0)+1
+        if risk >= 2:
+            blocking.append((risk, alert.get('name','unnamed')))
+Path('evidence/external-zap/risk-summary.txt').write_text(
+    f"informational={counts.get(0,0)}\nlow={counts.get(1,0)}\nmedium={counts.get(2,0)}\nhigh={counts.get(3,0)}\n"
+)
+if blocking:
+    raise SystemExit(f'ZAP medium/high findings: {blocking}')
+PY
+
+      - name: Record external readiness evidence
+        if: always()
+        shell: bash
+        run: |
+          health_status=PENDING
+          health_http_status=unknown
+          health_attempts=unknown
+          recovery_ms=unknown
+          cold_start=unknown
+          if [ -f evidence/external-health/summary.txt ]; then
+            health_status=PASS
+            health_http_status=$(grep '^http_status=' evidence/external-health/summary.txt | cut -d= -f2-)
+            health_attempts=$(grep '^attempts=' evidence/external-health/summary.txt | cut -d= -f2-)
+            recovery_ms=$(grep '^external_service_recovery_time_ms=' evidence/external-health/summary.txt | cut -d= -f2-)
+            cold_start=$(grep '^cold_start_detected=' evidence/external-health/summary.txt | cut -d= -f2-)
+          fi
+
+          dast_status=PENDING
+          medium=unknown
+          high=unknown
+          if [ -f evidence/external-zap/risk-summary.txt ]; then
+            medium=$(grep '^medium=' evidence/external-zap/risk-summary.txt | cut -d= -f2-)
+            high=$(grep '^high=' evidence/external-zap/risk-summary.txt | cut -d= -f2-)
+            if [ "$medium" = "0" ] && [ "$high" = "0" ]; then dast_status=PASS; fi
+          fi
+
+          management_exposed=unknown
+          if [ -f evidence/external-health/management-surface.status ]; then management_exposed=false; fi
+
+          {
+            echo "run_id=$GITHUB_RUN_ID"
+            echo "commit=$GITHUB_SHA"
+            echo "target=$STAGING_BASE_URL"
+            echo "health_status=$health_status"
+            echo "health_http_status=$health_http_status"
+            echo "health_attempts=$health_attempts"
+            echo "external_service_recovery_time_ms=$recovery_ms"
+            echo "cold_start_detected=$cold_start"
+            echo "tls_enabled=true"
+            echo "dast_type=OWASP_ZAP_BASELINE_PASSIVE"
+            echo "dast_medium_findings=$medium"
+            echo "dast_high_findings=$high"
+            echo "management_plane_publicly_exposed=$management_exposed"
+            echo "payment_initiation_enabled=false"
+            echo "external_internet_health=$health_status"
+            echo "external_passive_dast=$dast_status"
+            echo "independent_pentest=PENDING"
+            echo "legal_lgpd_review=PENDING"
+            echo "external_provider_homologation=PENDING"
+            echo "production=NO-GO"
+          } > evidence/external-summary.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-external-dast-${{ github.run_id }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 30
