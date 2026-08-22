@@ -2,6 +2,7 @@ name: staging-service-rehearsal
 
 on:
   workflow_dispatch:
+  pull_request:
   push:
     branches:
       - fix/staging-rehearsal-failures
@@ -105,8 +106,7 @@ jobs:
           /tmp/start-staging-service.sh
           ready=false
           for i in {1..90}; do
-            if docker run --rm --add-host=host.docker.internal:host-gateway curlimages/curl:8.15.0 \
-              -fsS http://host.docker.internal:8080/api/v1/transparency >/dev/null 2>&1; then
+            if docker run --rm --add-host=host.docker.internal:host-gateway curlimages/curl:8.15.0 -fsS http://host.docker.internal:8080/api/v1/transparency >/dev/null 2>&1; then
               ready=true
               break
             fi
@@ -148,8 +148,7 @@ jobs:
           /tmp/start-staging-service.sh
           recovered=false
           for i in {1..90}; do
-            if docker run --rm --add-host=host.docker.internal:host-gateway curlimages/curl:8.15.0 \
-              -fsS http://host.docker.internal:8080/api/v1/transparency >/dev/null 2>&1; then
+            if docker run --rm --add-host=host.docker.internal:host-gateway curlimages/curl:8.15.0 -fsS http://host.docker.internal:8080/api/v1/transparency >/dev/null 2>&1; then
               recovered=true
               break
             fi
@@ -178,14 +177,9 @@ jobs:
             401|403) ;;
             *) echo "unexpected post-recovery health status: $status" >&2; exit 1 ;;
           esac
-          docker run --rm --network host \
-            -e PGPASSWORD="$DB_PASSWORD" -e PGSSLMODE=require postgres:18-alpine \
-            psql "${DB_URL#jdbc:}" -U "$DB_USER" -Atc \
-            "select (select count(*) from flyway_schema_history where success and version in ('1','2','3','4','5','6','7','8')) || ',' || (select count(*) from ledger_chain_lock) || ',' || (select count(*) from audit_chain_lock);" \
-            > evidence/database-invariants.txt
+          docker run --rm --network host -e PGPASSWORD="$DB_PASSWORD" -e PGSSLMODE=require postgres:18-alpine psql "${DB_URL#jdbc:}" -U "$DB_USER" -Atc "select (select count(*) from flyway_schema_history where success and version in ('1','2','3','4','5','6','7','8')) || ',' || (select count(*) from ledger_chain_lock) || ',' || (select count(*) from audit_chain_lock);" > evidence/database-invariants.txt
           test "$(cat evidence/database-invariants.txt)" = "8,1,1"
-          docker run --rm --add-host=host.docker.internal:host-gateway redis:8-alpine \
-            redis-cli -h host.docker.internal -p 6379 ping | grep -q PONG
+          docker run --rm --add-host=host.docker.internal:host-gateway redis:8-alpine redis-cli -h host.docker.internal -p 6379 ping | grep -q PONG
 
       - name: Record service rehearsal evidence
         shell: bash
@@ -221,7 +215,5 @@ jobs:
         if: always()
         shell: bash
         run: |
-          if test -f /tmp/staging-service-rehearsal.pid; then
-            kill "$(cat /tmp/staging-service-rehearsal.pid)" 2>/dev/null || true
-          fi
+          if test -f /tmp/staging-service-rehearsal.pid; then kill "$(cat /tmp/staging-service-rehearsal.pid)" 2>/dev/null || true; fi
           rm -rf /tmp/fazerobem-service-rehearsal-documents
