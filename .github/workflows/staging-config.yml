@@ -126,10 +126,11 @@ jobs:
             exit 1
           fi
 
+          curl -fsS -D /tmp/public-health.headers http://localhost:18080/health -o /tmp/public-health.json
           ACTUATOR_STATUS=$(curl -sS -D /tmp/staging-health.headers -o /tmp/staging-health.json -w '%{http_code}' http://127.0.0.1:18081/actuator/health || true)
           echo "$ACTUATOR_STATUS" > /tmp/staging-health.status
 
-      - name: Validate staging readiness, actuator exposure and hardened profile
+      - name: Validate staging readiness, public probe, actuator exposure and hardened profile
         shell: bash
         run: |
           python - <<'PY'
@@ -138,6 +139,11 @@ jobs:
 
           readiness = json.loads(Path('/tmp/staging-readiness.json').read_text())
           assert isinstance(readiness, dict), readiness
+
+          public_health = json.loads(Path('/tmp/public-health.json').read_text())
+          assert public_health == {'status': 'UP'}, f'unexpected public health body: {public_health}'
+          public_headers = Path('/tmp/public-health.headers').read_text().lower()
+          assert 'cache-control:' in public_headers and 'no-store' in public_headers, public_headers
 
           status = Path('/tmp/staging-health.status').read_text().strip()
           assert status in {'200', '302', '401', '403'}, f'unexpected private actuator status: {status}'
