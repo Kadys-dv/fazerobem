@@ -9,6 +9,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.EnumSet;
+import java.util.List;
+import java.util.Set;
 
 @Service
 public class MemberConsentPolicy {
@@ -34,24 +36,37 @@ public class MemberConsentPolicy {
         if (user.getRole() != UserRole.MEMBER) {
             return;
         }
-        if (user.getMemberId() == null) {
-            throw new IllegalStateException("Conta de membro sem vínculo cadastral");
-        }
-
-        var missing = REQUIRED.stream()
-                .filter(type -> !consents.existsByMemberIdAndConsentTypeAndDocumentVersionAndAcceptedTrue(
-                        user.getMemberId(), type, currentVersion))
-                .map(Enum::name)
-                .toList();
-
+        var missing = missingFor(user);
         if (!missing.isEmpty()) {
             throw new IllegalStateException(
                     "Primeiro acesso pendente. Aceite os documentos vigentes antes de continuar: "
-                            + String.join(", ", missing));
+                            + String.join(", ", missing.stream().map(Enum::name).toList()));
         }
+    }
+
+    public List<ConsentType> missingForCurrentMember() {
+        AppUser user = currentUser.require();
+        if (user.getRole() != UserRole.MEMBER) {
+            return List.of();
+        }
+        return missingFor(user);
+    }
+
+    public Set<ConsentType> requiredTypes() {
+        return EnumSet.copyOf(REQUIRED);
     }
 
     public String currentVersion() {
         return currentVersion;
+    }
+
+    private List<ConsentType> missingFor(AppUser user) {
+        if (user.getMemberId() == null) {
+            throw new IllegalStateException("Conta de membro sem vínculo cadastral");
+        }
+        return REQUIRED.stream()
+                .filter(type -> !consents.existsByMemberIdAndConsentTypeAndDocumentVersionAndAcceptedTrue(
+                        user.getMemberId(), type, currentVersion))
+                .toList();
     }
 }
