@@ -20,6 +20,10 @@ Plataforma de **ajuda mútua e fundo comunitário transparente**, construída pa
 - Testcontainers
 - Playwright
 
+## Arquitetura
+
+A visão completa de componentes, papéis, fluxo de auxílio, segurança, pagamentos, ledger, auditoria e CI está em **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**.
+
 ## Princípios do projeto
 
 ```text
@@ -81,25 +85,9 @@ A interface administrativa não possui ação para forçar `PAID`: a liquidaçã
 - Testcontainers PostgreSQL + Redis;
 - E2E Playwright com autenticador WebAuthn virtual;
 - E2E live do fluxo completo até `PAID`, ledger e auditoria;
+- testes negativos de webhook, replay, idempotência, saldo e débito duplicado;
 - scripts de backup, restore e verificação de integridade;
 - SBOM CycloneDX, OWASP Dependency-Check, secret scan e CodeQL.
-
-### Hardening financeiro em andamento
-
-A etapa atual valida os caminhos negativos antes de qualquer integração real:
-
-- assinatura HMAC inválida;
-- corpo de webhook adulterado;
-- webhook expirado ou fora da tolerância temporal;
-- replay de `eventId`;
-- `FAILED`;
-- `RECONCILIATION_REQUIRED`;
-- repetição de iniciação com a mesma chave de idempotência;
-- prevenção de dupla liquidação/débito duplicado;
-- saldo insuficiente;
-- recuperação e reconciliação administrativa auditável.
-
-Nenhum desses testes utiliza dinheiro real.
 
 ## Executar localmente
 
@@ -130,6 +118,7 @@ Antes de qualquer piloto com recursos reais, o projeto exige no mínimo:
 
 Consulte:
 
+- `docs/ARCHITECTURE.md`
 - `docs/THREAT_MODEL.md`
 - `docs/SECURITY_CHECKS.md`
 - `docs/PENTEST_READINESS_CHECKLIST.md`
