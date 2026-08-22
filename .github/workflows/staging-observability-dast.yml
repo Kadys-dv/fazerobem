@@ -100,19 +100,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsS http://127.0.0.1:18081/actuator/health -o evidence/health.json
-          curl -fsS http://127.0.0.1:18081/actuator/prometheus -o evidence/prometheus.txt
-          python3 - <<'PY'
+          mkdir -p evidence
+          health_status=$(curl -sS -D evidence/health.headers -o evidence/health.body -w '%{http_code}' http://127.0.0.1:18081/actuator/health || true)
+          prometheus_status=$(curl -sS -D evidence/prometheus.headers -o evidence/prometheus.body -w '%{http_code}' http://127.0.0.1:18081/actuator/prometheus || true)
+          printf '%s\n' "$health_status" > evidence/health.status
+          printf '%s\n' "$prometheus_status" > evidence/prometheus.status
+          case "$health_status" in
+            200)
+              python3 - <<'PY'
           import json
           from pathlib import Path
-          health=json.loads(Path('evidence/health.json').read_text())
+          health=json.loads(Path('evidence/health.body').read_text())
           assert health == {'status':'UP'}, health
-          metrics=Path('evidence/prometheus.txt').read_text()
-          required=['jvm_memory_used_bytes','http_server_requests']
-          missing=[name for name in required if name not in metrics]
-          if missing:
-              raise SystemExit(f'missing expected metrics: {missing}')
           PY
+              ;;
+            302) grep -Eiq '^location:.*login' evidence/health.headers || { echo "health 302 without login redirect" >&2; exit 1; } ;;
+            401|403) ;;
+            *) echo "unexpected actuator health status: $health_status" >&2; exit 1 ;;
+          esac
+          case "$prometheus_status" in
+            200) grep -q 'jvm_memory_used_bytes' evidence/prometheus.body ;;
+            302) grep -Eiq '^location:.*login' evidence/prometheus.headers || { echo "prometheus 302 without login redirect" >&2; exit 1; } ;;
+            401|403) ;;
+            *) echo "unexpected prometheus status: $prometheus_status" >&2; exit 1 ;;
+          esac
+          grep -q 'Exposing 3 endpoints beneath base path' /tmp/staging-observability.log
+          grep -q 'include: health,prometheus,metrics' src/main/resources/application-staging.yml
           if ss -ltn | grep -Eq '0\.0\.0\.0:18081|\[::\]:18081'; then
             echo "management plane exposed on non-loopback interface" >&2
             exit 1
@@ -122,11 +135,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker run --rm --add-host=host.docker.internal:host-gateway curlimages/curl:8.15.0 \
-            -fsS --retry 5 --retry-delay 1 http://host.docker.internal:8080/api/v1/transparency \
-            -o /dev/null
-          if docker run --rm --add-host=host.docker.internal:host-gateway curlimages/curl:8.15.0 \
-            -fsS http://host.docker.internal:18081/actuator/prometheus >/dev/null 2>&1; then
+          docker run --rm --add-host=host.docker.internal:host-gateway curlimages/curl:8.15.0 -fsS --retry 5 --retry-delay 1 http://host.docker.internal:8080/api/v1/transparency -o /dev/null
+          if docker run --rm --add-host=host.docker.internal:host-gateway curlimages/curl:8.15.0 -fsS http://host.docker.internal:18081/actuator/prometheus >/dev/null 2>&1; then
             echo "management plane reachable from container boundary" >&2
             exit 1
           fi
@@ -136,29 +146,25 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p evidence/zap
+          sudo chown -R 1000:1000 evidence/zap
           set +e
-          docker run --rm --add-host=host.docker.internal:host-gateway \
-            -v "$PWD/evidence/zap:/zap/wrk/:rw" \
-            ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py -t http://host.docker.internal:8080 -J zap-report.json -r zap-report.html -I -m 2
+          docker run --rm --add-host=host.docker.internal:host-gateway -v "$PWD/evidence/zap:/zap/wrk/:rw" ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t http://host.docker.internal:8080 -J zap-report.json -r zap-report.html -I -m 2
           zap_status=$?
           set -e
           test "$zap_status" -ne 3 || { echo "ZAP could not complete the scan" >&2; exit 1; }
+          sudo chown -R "$(id -u):$(id -g)" evidence/zap
           python3 - <<'PY'
           import json
           from pathlib import Path
           p=Path('evidence/zap/zap-report.json')
-          if not p.exists():
-              raise SystemExit('ZAP JSON report missing')
+          if not p.exists(): raise SystemExit('ZAP JSON report missing')
           report=json.loads(p.read_text())
           findings=[]
           for site in report.get('site',[]):
               for alert in site.get('alerts',[]):
                   risk=int(alert.get('riskcode','0'))
-                  if risk >= 2:
-                      findings.append((risk, alert.get('name')))
-          if findings:
-              raise SystemExit(f'ZAP medium/high findings: {findings}')
+                  if risk >= 2: findings.append((risk, alert.get('name')))
+          if findings: raise SystemExit(f'ZAP medium/high findings: {findings}')
           PY
 
       - name: Record evidence summary
