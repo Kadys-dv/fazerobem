@@ -60,8 +60,8 @@ jobs:
 
       - name: External health check rehearsal
         run: |
-          mkdir -p target/health/actuator
-          printf '{"status":"UP"}\n' > target/health/actuator/health
+          mkdir -p target/health
+          printf '{"status":"UP"}\n' > target/health/health
           (cd target/health && python3 -m http.server 18080 >/tmp/readiness-health.log 2>&1 &)
           sleep 1
           ALLOW_HTTP_FOR_TEST=true STAGING_BASE_URL=http://127.0.0.1:18080 bash scripts/external-health-check.sh
