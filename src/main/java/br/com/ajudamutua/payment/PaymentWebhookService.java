@@ -48,11 +48,13 @@ public class PaymentWebhookService {
                        String providerStatus) {
         validateAuthenticity(eventId, timestamp, signature, body);
 
-        WebhookEvent event = webhooks.save(new WebhookEvent(
+        // Força a restrição única de event_id antes de qualquer mutação financeira.
+        WebhookEvent event = webhooks.saveAndFlush(new WebhookEvent(
                 UUID.randomUUID(), "SANDBOX", eventId, WebhookSignatureService.sha256(body),
                 Instant.parse(timestamp), Instant.now()));
 
-        PaymentAttempt payment = attempts.findByProviderReference(providerReference)
+        // Serializa transições para a mesma referência do provider.
+        PaymentAttempt payment = attempts.findByProviderReferenceForUpdate(providerReference)
                 .orElseThrow(() -> new IllegalArgumentException("Pagamento desconhecido"));
 
         if ("SETTLED".equalsIgnoreCase(providerStatus)) {
