@@ -13,10 +13,18 @@ const WEBHOOK_SECRET = process.env.SANDBOX_WEBHOOK_SECRET || '';
 type Csrf = { headerName: string; parameterName: string; token: string };
 type AidSeed = { id: string; email: string; memberId: string };
 
-async function csrf(ctx: APIRequestContext): Promise<Csrf> {
+const csrfCache = new WeakMap<APIRequestContext, Csrf>();
+
+async function csrf(ctx: APIRequestContext, refresh = false): Promise<Csrf> {
+  if (!refresh) {
+    const cached = csrfCache.get(ctx);
+    if (cached) return cached;
+  }
   const response = await ctx.get('/api/v1/auth/csrf');
   expect(response.ok(), `csrf failed: ${response.status()} ${await response.text()}`).toBeTruthy();
-  return response.json();
+  const token = await response.json() as Csrf;
+  csrfCache.set(ctx, token);
+  return token;
 }
 
 async function jsonMutation(ctx: APIRequestContext, path: string, data: unknown, headers: Record<string, string> = {}) {
@@ -33,6 +41,8 @@ async function login(ctx: APIRequestContext, email: string, password: string) {
     form: { username: email, password, [token.parameterName]: token.token }
   });
   expect(response.ok(), `login failed for ${email}: ${response.status()}`).toBeTruthy();
+  csrfCache.delete(ctx);
+  await csrf(ctx, true);
   const me = await ctx.get('/api/v1/auth/me');
   expect(me.ok()).toBeTruthy();
   const body = await me.json();
@@ -51,14 +61,25 @@ async function seedMember(index: number, runId: string): Promise<AidSeed | null>
   const ctx = await request.newContext({ baseURL: BASE_URL });
   try {
     const email = `pilot-${runId}-${String(index).padStart(3, '0')}@example.test`;
-    const register = await jsonMutation(ctx, '/api/v1/auth/register', {
-      name: `Membro Piloto ${index}`,
-      email,
-      password: MEMBER_PASSWORD
+    const registerToken = await csrf(ctx);
+    const register = await ctx.post('/api/v1/auth/register', {
+      headers: { [registerToken.headerName]: registerToken.token, 'Content-Type': 'application/json' },
+      data: { name: `Membro Piloto ${index}`, email, password: MEMBER_PASSWORD }
     });
     expect(register.status(), `register ${index}: ${await register.text()}`).toBe(201);
 
-    const me = await login(ctx, email, MEMBER_PASSWORD);
+    const loginResponse = await ctx.post('/login', {
+      form: { username: email, password: MEMBER_PASSWORD, [registerToken.parameterName]: registerToken.token }
+    });
+    expect(loginResponse.ok(), `login failed for ${email}: ${loginResponse.status()}`).toBeTruthy();
+
+    csrfCache.delete(ctx);
+    await csrf(ctx, true);
+    const meResponse = await ctx.get('/api/v1/auth/me');
+    expect(meResponse.ok()).toBeTruthy();
+    const me = await meResponse.json();
+    expect(me.authenticated).toBe(true);
+    expect(me.email).toBe(email);
     const memberId = me.memberId as string;
 
     const contribution = await jsonMutation(ctx, '/api/v1/contributions', { memberId, amount: '25.00' });
@@ -92,6 +113,7 @@ async function seedMember(index: number, runId: string): Promise<AidSeed | null>
 
     return { id: created.id, email, memberId };
   } finally {
+    csrfCache.delete(ctx);
     await ctx.dispose();
   }
 }
@@ -129,9 +151,7 @@ test('phase 8 pilot simulation preserves governance and financial invariants', a
 
   try {
     for (const seed of seeds.slice(0, PAID_SAMPLE_COUNT)) {
-      const analysis = await jsonMutation(analyst, `/api/v1/aid-requests/${seed.id}/analysis`, {
-        opinion: 'Documentação compatível na simulação controlada de piloto.'
-      });
+      const analysis = await jsonMutation(analyst, `/api/v1/aid-requests/${seed.id}/analysis`, { opinion: 'Documentação compatível na simulação controlada de piloto.' });
       expect(analysis.ok(), `analysis ${seed.id}: ${await analysis.text()}`).toBeTruthy();
 
       const fraud = await jsonMutation(analyst, `/api/v1/aid-requests/${seed.id}/fraud-screening`, {
@@ -139,14 +159,10 @@ test('phase 8 pilot simulation preserves governance and financial invariants', a
       });
       expect(fraud.ok(), `fraud ${seed.id}: ${await fraud.text()}`).toBeTruthy();
 
-      const firstApproval = await jsonMutation(approver1, `/api/v1/aid-requests/${seed.id}/approve`, {
-        note: 'Primeira aprovação independente do piloto.'
-      });
+      const firstApproval = await jsonMutation(approver1, `/api/v1/aid-requests/${seed.id}/approve`, { note: 'Primeira aprovação independente do piloto.' });
       expect(firstApproval.ok(), `approval1 ${seed.id}: ${await firstApproval.text()}`).toBeTruthy();
 
-      const secondApproval = await jsonMutation(approver2, `/api/v1/aid-requests/${seed.id}/approve`, {
-        note: 'Segunda aprovação independente do piloto.'
-      });
+      const secondApproval = await jsonMutation(approver2, `/api/v1/aid-requests/${seed.id}/approve`, { note: 'Segunda aprovação independente do piloto.' });
       expect(secondApproval.ok(), `approval2 ${seed.id}: ${await secondApproval.text()}`).toBeTruthy();
 
       const idempotencyKey = `pilot-${runId}-${seed.id}`;
@@ -168,24 +184,14 @@ test('phase 8 pilot simulation preserves governance and financial invariants', a
       const eventId = `pilot-event-${runId}-${seed.id}`;
       const signature = createHmac('sha256', WEBHOOK_SECRET).update(`${timestamp}.${webhookBody}`).digest('hex');
       const settled = await webhook.post('/api/v1/sandbox/webhooks/payment', {
-        headers: {
-          'X-Event-Id': eventId,
-          'X-Timestamp': timestamp,
-          'X-Signature': signature,
-          'Content-Type': 'application/json'
-        },
+        headers: { 'X-Event-Id': eventId, 'X-Timestamp': timestamp, 'X-Signature': signature, 'Content-Type': 'application/json' },
         data: { providerReference: attempt.providerReference, status: 'SETTLED' }
       });
       expect(settled.status(), `settlement ${seed.id}: ${await settled.text()}`).toBe(204);
 
       if (seed === seeds[0]) {
         const replay = await webhook.post('/api/v1/sandbox/webhooks/payment', {
-          headers: {
-            'X-Event-Id': eventId,
-            'X-Timestamp': timestamp,
-            'X-Signature': signature,
-            'Content-Type': 'application/json'
-          },
+          headers: { 'X-Event-Id': eventId, 'X-Timestamp': timestamp, 'X-Signature': signature, 'Content-Type': 'application/json' },
           data: { providerReference: attempt.providerReference, status: 'SETTLED' }
         });
         expect(replay.status()).not.toBe(204);
@@ -207,12 +213,10 @@ test('phase 8 pilot simulation preserves governance and financial invariants', a
       expect(attempts).toHaveLength(1);
       expect(attempts[0].status).toBe('SETTLED');
 
-      const payments = ledger.filter((entry: { aidRequestId?: string; type: string }) =>
-        entry.aidRequestId === seed.id && entry.type === 'AID_PAYMENT');
+      const payments = ledger.filter((entry: { aidRequestId?: string; type: string }) => entry.aidRequestId === seed.id && entry.type === 'AID_PAYMENT');
       expect(payments, `exactly one AID_PAYMENT for ${seed.id}`).toHaveLength(1);
 
-      const events = audit.filter((event: { entityType: string; entityId: string }) =>
-        event.entityType === 'AidRequest' && event.entityId === seed.id);
+      const events = audit.filter((event: { entityType: string; entityId: string }) => event.entityType === 'AidRequest' && event.entityId === seed.id);
       expect(events.filter((event: { action: string }) => event.action === 'AID_APPROVED')).toHaveLength(2);
       expect(events.filter((event: { action: string }) => event.action === 'PAYMENT_SETTLED')).toHaveLength(1);
     }
@@ -232,14 +236,14 @@ test('phase 8 pilot simulation preserves governance and financial invariants', a
       aidRequestsCreated: AID_COUNT,
       paidSample: PAID_SAMPLE_COUNT,
       concurrency: CONCURRENCY,
-      invariants: {
-        distinctApprovals: true,
-        exactlyOnceLedgerDebit: true,
-        paymentIdempotency: true,
-        webhookReplayProtection: true
-      }
+      csrfStrategy: 'one token per authentication state/session',
+      invariants: { distinctApprovals: true, exactlyOnceLedgerDebit: true, paymentIdempotency: true, webhookReplayProtection: true }
     }, null, 2));
   } finally {
+    csrfCache.delete(analyst);
+    csrfCache.delete(approver1);
+    csrfCache.delete(approver2);
+    csrfCache.delete(admin);
     await Promise.all([analyst.dispose(), approver1.dispose(), approver2.dispose(), admin.dispose(), webhook.dispose()]);
   }
 });
