@@ -2,9 +2,30 @@
 FROM maven:3.9.11-eclipse-temurin-21 AS build
 WORKDIR /workspace
 COPY pom.xml ./
-RUN mvn -B -DskipTests dependency:go-offline
+RUN --mount=type=cache,target=/root/.m2 \
+    set -eu; \
+    for delay in 0 10 30 60; do \
+      if [ "$delay" -gt 0 ]; then sleep "$delay"; fi; \
+      if mvn -B -DskipTests -Dmaven.wagon.http.retryHandler.count=3 dependency:go-offline; then \
+        exit 0; \
+      fi; \
+      echo "Maven dependency resolution failed; retrying after backoff..." >&2; \
+    done; \
+    exit 1
 COPY src src
-RUN mvn -B -DskipTests package && cp "$(find target -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' | head -n1)" /workspace/app.jar
+RUN --mount=type=cache,target=/root/.m2 \
+    set -eu; \
+    for delay in 0 10 30 60; do \
+      if [ "$delay" -gt 0 ]; then sleep "$delay"; fi; \
+      if mvn -B -DskipTests -Dmaven.wagon.http.retryHandler.count=3 package; then \
+        jar="$(find target -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' | head -n1)"; \
+        test -n "$jar"; \
+        cp "$jar" /workspace/app.jar; \
+        exit 0; \
+      fi; \
+      echo "Maven package failed; retrying after backoff..." >&2; \
+    done; \
+    exit 1
 
 FROM eclipse-temurin:21-jre
 RUN useradd --system --uid 10001 --create-home appuser
