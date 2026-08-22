@@ -124,6 +124,26 @@ jobs:
           echo "CI_DB_PASSWORD=$DB_PASSWORD_VALUE" >> "$GITHUB_ENV"
           echo "APP_CRYPTO_MASTER_KEY_BASE64=$APP_KEY_VALUE" >> "$GITHUB_ENV"
           echo "SANDBOX_WEBHOOK_SECRET=$WEBHOOK_SECRET_VALUE" >> "$GITHUB_ENV"
+      - name: Pull PostgreSQL and Redis images with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          pull_with_retry() {
+            local image="$1"
+            local attempt
+            for attempt in 1 2 3 4; do
+              if docker pull "$image"; then
+                return 0
+              fi
+              if [ "$attempt" -eq 4 ]; then
+                echo "failed to pull $image after $attempt attempts" >&2
+                return 1
+              fi
+              sleep $((attempt * 5))
+            done
+          }
+          pull_with_retry postgres:17-alpine
+          pull_with_retry redis:8-alpine
       - name: Start PostgreSQL and Redis
         shell: bash
         run: |
