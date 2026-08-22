@@ -9,6 +9,7 @@ import br.com.ajudamutua.service.AidPolicyService;
 import br.com.ajudamutua.service.AuditService;
 import br.com.ajudamutua.service.CurrentUserService;
 import br.com.ajudamutua.service.LedgerService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +36,7 @@ public class PaymentInitiationService {
     private final AuditService audit;
     private final PaymentProviderGateway provider;
 
+    @Autowired
     public PaymentInitiationService(AidRequestRepository aids,
                                     AidApprovalRepository approvals,
                                     PaymentAttemptRepository attempts,
@@ -55,26 +57,32 @@ public class PaymentInitiationService {
         this.provider = provider;
     }
 
+    PaymentInitiationService(AidRequestRepository aids,
+                             AidApprovalRepository approvals,
+                             PaymentAttemptRepository attempts,
+                             OutboxEventRepository outbox,
+                             CurrentUserService current,
+                             AidPolicyService policy,
+                             LedgerService ledger,
+                             AuditService audit,
+                             PaymentProvider provider) {
+        this(aids, approvals, attempts, outbox, current, policy, ledger, audit,
+                new PaymentProviderGateway(provider, 1, 2000, 0));
+    }
+
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
     public PaymentAttempt initiate(UUID aidId, String idempotencyKey) {
         requireIdempotencyKey(idempotencyKey);
-
         PaymentAttempt prior = findPrior(idempotencyKey, aidId);
-        if (prior != null) {
-            return prior;
-        }
+        if (prior != null) return prior;
 
         AppUser actor = current.require();
         AidRequest aid = aids.findByIdForUpdate(aidId).orElseThrow();
-
         prior = findPrior(idempotencyKey, aidId);
-        if (prior != null) {
-            return prior;
-        }
+        if (prior != null) return prior;
 
         validateReadyForPayment(aid, actor);
-
         PaymentAttempt payment = attempts.saveAndFlush(new PaymentAttempt(
                 UUID.randomUUID(), aidId, idempotencyKey, "SANDBOX", PaymentStatus.READY,
                 aid.getAmount(), actor.getId(), Instant.now()));
@@ -90,46 +98,27 @@ public class PaymentInitiationService {
         audit.append(actor.getId(), "PAYMENT_INITIATED", "AidRequest", aidId,
                 "{\"paymentAttemptId\":\"" + payment.getId() +
                         "\",\"providerRequestId\":\"" + initiation.providerRequestId() + "\"}");
-
         return payment;
     }
 
     private PaymentAttempt findPrior(String idempotencyKey, UUID aidId) {
         var prior = attempts.findByIdempotencyKey(idempotencyKey);
-        if (prior.isEmpty()) {
-            return null;
-        }
-        if (!prior.get().getAidRequestId().equals(aidId)) {
-            throw new IllegalStateException("Idempotency-Key já usada");
-        }
+        if (prior.isEmpty()) return null;
+        if (!prior.get().getAidRequestId().equals(aidId)) throw new IllegalStateException("Idempotency-Key já usada");
         return prior.get();
     }
 
     private void requireIdempotencyKey(String idempotencyKey) {
-        if (idempotencyKey == null || idempotencyKey.isBlank()) {
-            throw new IllegalArgumentException("Idempotency-Key obrigatório");
-        }
+        if (idempotencyKey == null || idempotencyKey.isBlank()) throw new IllegalArgumentException("Idempotency-Key obrigatório");
     }
 
     private void validateReadyForPayment(AidRequest aid, AppUser actor) {
         UUID aidId = aid.getId();
-        if (attempts.existsByAidRequestIdAndStatusIn(aidId, ACTIVE_STATUSES)) {
-            throw new IllegalStateException("Já existe tentativa ativa de pagamento para este auxílio");
-        }
-        if (aid.getStatus() != AidStatus.APPROVED || approvals.countByAidRequestId(aidId) < 2) {
-            throw new IllegalStateException("Pedido não está pronto para pagamento");
-        }
-        if (approvals.findByAidRequestId(aidId).stream()
-                .anyMatch(approval -> approval.getApproverUserId().equals(actor.getId()))) {
-            throw new IllegalStateException("Separação de funções violada");
-        }
-
+        if (attempts.existsByAidRequestIdAndStatusIn(aidId, ACTIVE_STATUSES)) throw new IllegalStateException("Já existe tentativa ativa de pagamento para este auxílio");
+        if (aid.getStatus() != AidStatus.APPROVED || approvals.countByAidRequestId(aidId) < 2) throw new IllegalStateException("Pedido não está pronto para pagamento");
+        if (approvals.findByAidRequestId(aidId).stream().anyMatch(a -> a.getApproverUserId().equals(actor.getId()))) throw new IllegalStateException("Separação de funções violada");
         var eligibility = policy.evaluate(aid);
-        if (!eligibility.eligible()) {
-            throw new IllegalStateException("Elegibilidade inválida: " + String.join("; ", eligibility.blockers()));
-        }
-        if (ledger.balance().compareTo(aid.getAmount()) < 0) {
-            throw new IllegalStateException("Fundo insuficiente");
-        }
+        if (!eligibility.eligible()) throw new IllegalStateException("Elegibilidade inválida: " + String.join("; ", eligibility.blockers()));
+        if (ledger.balance().compareTo(aid.getAmount()) < 0) throw new IllegalStateException("Fundo insuficiente");
     }
 }
