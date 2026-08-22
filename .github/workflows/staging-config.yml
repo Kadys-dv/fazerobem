@@ -1,0 +1,137 @@
+name: staging-config
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  staging-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Staging must fail closed without required configuration
+        shell: bash
+        run: |
+          set +e
+          timeout 45s mvn -B spring-boot:run -Dspring-boot.run.profiles=staging > /tmp/staging-negative.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "ERRO: staging iniciou sem configuração crítica"
+            cat /tmp/staging-negative.log
+            exit 1
+          fi
+          if [ "$status" -eq 124 ]; then
+            echo "ERRO: staging não falhou de forma determinística; processo ficou ativo até timeout"
+            cat /tmp/staging-negative.log
+            exit 1
+          fi
+          grep -Eq 'DB_URL|KMS_PROVIDER|Could not resolve placeholder|Failed to bind properties' /tmp/staging-negative.log
+
+      - name: Generate isolated staging secrets
+        shell: bash
+        run: |
+          DB_PASSWORD_VALUE=$(openssl rand -hex 24)
+          REDIS_PASSWORD_VALUE=$(openssl rand -hex 24)
+          APP_KEY_VALUE=$(openssl rand -base64 32 | tr -d '\n')
+          WEBHOOK_SECRET_VALUE=$(openssl rand -hex 32)
+          for value in "$DB_PASSWORD_VALUE" "$REDIS_PASSWORD_VALUE" "$APP_KEY_VALUE" "$WEBHOOK_SECRET_VALUE"; do echo "::add-mask::$value"; done
+          echo "STAGING_DB_PASSWORD=$DB_PASSWORD_VALUE" >> "$GITHUB_ENV"
+          echo "STAGING_REDIS_PASSWORD=$REDIS_PASSWORD_VALUE" >> "$GITHUB_ENV"
+          echo "STAGING_APP_KEY=$APP_KEY_VALUE" >> "$GITHUB_ENV"
+          echo "STAGING_WEBHOOK_SECRET=$WEBHOOK_SECRET_VALUE" >> "$GITHUB_ENV"
+
+      - name: Start isolated PostgreSQL and password-protected Redis
+        shell: bash
+        run: |
+          docker run -d --name fazerobem-staging-pg \
+            -e POSTGRES_DB=ajuda_mutua_staging \
+            -e POSTGRES_USER=ajuda_staging \
+            -e POSTGRES_PASSWORD="$STAGING_DB_PASSWORD" \
+            -p 5432:5432 postgres:17-alpine
+          docker run -d --name fazerobem-staging-redis -p 6379:6379 redis:8-alpine \
+            redis-server --requirepass "$STAGING_REDIS_PASSWORD"
+          for i in {1..40}; do
+            docker exec fazerobem-staging-pg pg_isready -U ajuda_staging -d ajuda_mutua_staging >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec fazerobem-staging-pg pg_isready -U ajuda_staging -d ajuda_mutua_staging
+          for i in {1..40}; do
+            docker exec fazerobem-staging-redis redis-cli -a "$STAGING_REDIS_PASSWORD" --no-auth-warning ping 2>/dev/null | grep -q PONG && break
+            sleep 1
+          done
+          docker exec fazerobem-staging-redis redis-cli -a "$STAGING_REDIS_PASSWORD" --no-auth-warning ping | grep -q PONG
+
+      - name: Start staging with explicit configuration
+        shell: bash
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/ajuda_mutua_staging
+          DB_USER: ajuda_staging
+          REDIS_HOST: localhost
+          REDIS_PORT: '6379'
+          APP_CRYPTO_KEY_ID: staging-ci-v1
+          WEBAUTHN_RP_ID: staging.example.invalid
+          WEBAUTHN_ALLOWED_ORIGINS: https://staging.example.invalid
+          KMS_PROVIDER: local
+          DOCUMENTS_PATH: /tmp/fazerobem-staging-documents
+          SESSION_COOKIE_SECURE: 'true'
+          PORT: '18080'
+          OTEL_EXPORTER_OTLP_ENDPOINT: http://localhost:4318/v1/traces
+        run: |
+          export DB_PASSWORD="$STAGING_DB_PASSWORD"
+          export REDIS_PASSWORD="$STAGING_REDIS_PASSWORD"
+          export APP_CRYPTO_MASTER_KEY_BASE64="$STAGING_APP_KEY"
+          export SANDBOX_WEBHOOK_SECRET="$STAGING_WEBHOOK_SECRET"
+          nohup mvn -B spring-boot:run -Dspring-boot.run.profiles=staging > /tmp/staging-positive.log 2>&1 &
+          echo $! > /tmp/staging-positive.pid
+          for i in {1..90}; do
+            if curl -fsS http://localhost:18080/actuator/health > /tmp/staging-health.json; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/staging-positive.log
+          exit 1
+
+      - name: Validate staging health and hardened profile
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          health = json.loads(Path('/tmp/staging-health.json').read_text())
+          assert health.get('status') == 'UP', health
+
+          text = Path('src/main/resources/application-staging.yml').read_text()
+          assert 'http://localhost:8080' not in text, 'staging contains development origin'
+          assert 'secure: true' in text, 'Secure cookie is not enforced'
+          assert 'http-only: true' in text, 'HttpOnly cookie is not enforced'
+          assert 'same-site: strict' in text, 'SameSite Strict is not enforced'
+          assert 'password: ${DB_PASSWORD}' in text, 'Database password must be external'
+          assert 'password: ${REDIS_PASSWORD}' in text, 'Redis password must be external'
+          assert 'webhook-secret: ${SANDBOX_WEBHOOK_SECRET}' in text, 'Webhook secret must be external'
+          assert 'rp-id: ${WEBAUTHN_RP_ID}' in text, 'WebAuthn RP ID must be external'
+          assert 'allowed-origins: ${WEBAUTHN_ALLOWED_ORIGINS}' in text, 'WebAuthn origin must be external'
+          PY
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          cat /tmp/staging-negative.log 2>/dev/null || true
+          cat /tmp/staging-positive.log 2>/dev/null || true
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          test -f /tmp/staging-positive.pid && kill "$(cat /tmp/staging-positive.pid)" || true
+          docker rm -f fazerobem-staging-pg fazerobem-staging-redis || true
