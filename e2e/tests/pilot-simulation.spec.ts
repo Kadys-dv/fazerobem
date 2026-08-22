@@ -60,14 +60,14 @@ async function operator(email: string) {
 }
 
 async function acceptRequiredConsents(ctx: APIRequestContext) {
-  for (const type of REQUIRED_CONSENTS) {
-    const response = await jsonMutation(ctx, '/api/v1/privacy/consents', {
-      type,
-      version: POLICY_VERSION,
-      accepted: true
-    });
-    expect(response.ok(), `consent ${type}: ${await response.text()}`).toBeTruthy();
-  }
+  const response = await jsonMutation(ctx, '/api/v1/member/onboarding', {
+    version: POLICY_VERSION,
+    accepted: REQUIRED_CONSENTS
+  });
+  expect(response.ok(), `onboarding: ${await response.text()}`).toBeTruthy();
+  const status = await response.json();
+  expect(status.complete).toBe(true);
+  expect(status.missing).toHaveLength(0);
 }
 
 async function seedMember(index: number, runId: string): Promise<AidSeed | null> {
@@ -258,7 +258,7 @@ test('phase 8 pilot simulation preserves governance and financial invariants', a
       paidSample: PAID_SAMPLE_COUNT,
       concurrency: CONCURRENCY,
       csrfStrategy: 'one token per authentication state/session',
-      consentStrategy: `required version ${POLICY_VERSION} accepted before member financial actions`,
+      consentStrategy: `batched onboarding ${POLICY_VERSION} before member financial actions`,
       eligibilityScenario: 'HEALTH emergency with zero effective waiting',
       invariants: { distinctApprovals: true, exactlyOnceLedgerDebit: true, paymentIdempotency: true, webhookReplayProtection: true }
     }, null, 2));
