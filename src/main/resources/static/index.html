@@ -80,6 +80,11 @@
     </div>
 
     <article class="panel">
+      <div class="panel-header"><div><h3>Minhas contribuições</h3><p class="muted">Histórico privado das suas contribuições registradas no sandbox.</p></div><div class="member-total"><span>Total</span><strong id="myContributionTotal">R$ 0,00</strong></div></div>
+      <div id="myContributions" class="ledger-list empty-state">Nenhuma contribuição carregada.</div>
+    </article>
+
+    <article class="panel">
       <div class="panel-header"><div><h3>Meus pedidos</h3><p class="muted">Acompanhe a evolução de cada solicitação.</p></div><button id="refreshMine" class="ghost" type="button">Atualizar</button></div>
       <div id="myRequests" class="request-list empty-state">Nenhum pedido carregado.</div>
     </article>
@@ -113,10 +118,23 @@
     <label>Nome<input id="registerName" autocomplete="name" required></label>
     <label>E-mail<input id="registerEmail" type="email" autocomplete="email" required></label>
     <label>Senha<input id="registerPassword" type="password" minlength="10" autocomplete="new-password" required></label>
-    <p class="legal-note">Ao criar a conta, você reconhece que o Fazer o Bem não é investimento e que contribuições não geram promessa de retorno financeiro.</p>
+    <p class="legal-note">A conta será criada primeiro. Depois do primeiro acesso você deverá ler e aceitar os Termos, a Política de Privacidade e as Regras da Comunidade vigentes.</p>
     <button class="primary full" type="submit">Criar conta</button>
   </form>
   <p id="authMessage" class="form-message" role="status"></p>
+</dialog>
+
+<dialog id="onboardingDialog" class="onboarding-dialog">
+  <div class="dialog-head"><div><span class="eyebrow">Primeiro acesso</span><h2>Antes de participar</h2></div></div>
+  <p class="muted">Para manter a comunidade transparente, registramos separadamente o aceite da versão atual de cada documento.</p>
+  <form id="onboardingForm">
+    <label class="legal-check"><input id="acceptTerms" type="checkbox" required><span>Li e aceito os <a href="/terms.html" target="_blank" rel="noopener">Termos de Participação</a>.</span></label>
+    <label class="legal-check"><input id="acceptPrivacy" type="checkbox" required><span>Li e aceito a <a href="/privacy.html" target="_blank" rel="noopener">Política de Privacidade</a>.</span></label>
+    <label class="legal-check"><input id="acceptRules" type="checkbox" required><span>Li e aceito as <a href="/community-rules.html" target="_blank" rel="noopener">Regras da Comunidade</a>.</span></label>
+    <div class="onboarding-warning"><strong>Importante</strong><span>Contribuições são voluntárias e não geram rendimento, restituição, prioridade nem promessa de auxílio futuro.</span></div>
+    <button class="primary full" type="submit">Aceitar e continuar</button>
+  </form>
+  <p id="onboardingMessage" class="form-message" role="status"></p>
 </dialog>
 
 <div id="toast" class="toast hidden" role="status"></div>
