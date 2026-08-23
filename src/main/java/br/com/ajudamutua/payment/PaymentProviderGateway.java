@@ -58,13 +58,31 @@ public class PaymentProviderGateway {
             throw new IllegalStateException("Serviço de destino de pagamento indisponível");
         }
         try (ResolvedPaymentDestination destination = destinations.resolveActive(memberId)) {
-            return retry(() -> destinationAware.initiateWithDestination(
+            // Outbound transfer creation is deliberately not retried. A timeout after the
+            // provider accepted a POST could otherwise create a duplicate transfer.
+            return executeOnce(() -> destinationAware.initiateWithDestination(
                     paymentId, amount, idempotencyKey, destination));
         }
     }
 
     public PaymentProvider.StatusResult queryStatus(String providerReference) {
         return retry(() -> provider.queryStatus(providerReference));
+    }
+
+    private <T> T executeOnce(java.util.concurrent.Callable<T> operation) {
+        try {
+            return CompletableFuture.supplyAsync(() -> {
+                        try {
+                            return operation.call();
+                        } catch (Exception e) {
+                            throw new RuntimeException(e);
+                        }
+                    })
+                    .orTimeout(timeout.toMillis(), TimeUnit.MILLISECONDS)
+                    .join();
+        } catch (RuntimeException ex) {
+            throw new IllegalStateException("Resultado da iniciação do provider é incerto; reconciliar antes de tentar novamente", ex);
+        }
     }
 
     private <T> T retry(java.util.concurrent.Callable<T> operation) {
