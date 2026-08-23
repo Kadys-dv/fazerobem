@@ -37,6 +37,10 @@ public class AsaasSandboxPaymentProvider implements PaymentProvider, Destination
                 .build();
     }
 
+    RestClient probeClient() {
+        return client;
+    }
+
     @Override
     public String providerCode() {
         return "ASAAS_SANDBOX";
