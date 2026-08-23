@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 public class PaymentOperationGate {
     private final boolean initiationEnabled;
 
-    public PaymentOperationGate(@Value("${app.payments.initiation-enabled:true}") boolean initiationEnabled) {
+    public PaymentOperationGate(@Value("${app.payments.initiation-enabled:false}") boolean initiationEnabled) {
         this.initiationEnabled = initiationEnabled;
     }
 

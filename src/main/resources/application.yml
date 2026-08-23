@@ -40,6 +40,8 @@ app:
     rate-limit-per-minute: ${RATE_LIMIT_PER_MINUTE:120}
   privacy:
     document-retention-days: ${DOCUMENT_RETENTION_DAYS:365}
+  payments:
+    initiation-enabled: ${PAYMENT_INITIATION_ENABLED:false}
   reconciliation:
     fixed-delay-ms: ${RECONCILIATION_DELAY_MS:60000}
   outbox:

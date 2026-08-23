@@ -89,6 +89,7 @@ jobs:
           REDIS_PORT: '6379'
           KMS_PROVIDER: local
           APP_SECURITY_MFA_REQUIRED_FOR_PRIVILEGED: 'false'
+          PAYMENT_INITIATION_ENABLED: 'true'
         run: |
           export DB_PASSWORD="$CI_DB_PASSWORD"
           nohup mvn -B spring-boot:run -Dspring-boot.run.profiles=dev > /tmp/fazerobem-pilot-app.log 2>&1 &
