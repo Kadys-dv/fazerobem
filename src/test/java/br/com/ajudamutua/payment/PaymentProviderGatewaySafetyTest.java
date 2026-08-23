@@ -6,7 +6,9 @@ import org.springframework.web.client.HttpClientErrorException;
 
 import java.math.BigDecimal;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class PaymentProviderGatewaySafetyTest {
@@ -18,17 +20,14 @@ class PaymentProviderGatewaySafetyTest {
         org.mockito.Mockito.when(destinations.resolveActive(memberId))
                 .thenReturn(new ResolvedPaymentDestination(memberId, PaymentDestination.PixKeyType.EMAIL, "test@example.invalid"));
 
-        DestinationAwarePaymentProvider provider = new DestinationAwarePaymentProvider() {
-            @Override
-            public PaymentProvider.Initiation initiateWithDestination(UUID paymentId, BigDecimal amount, String idempotencyKey,
-                                                                      ResolvedPaymentDestination destination) {
-                throw new HttpClientErrorException(HttpStatus.BAD_REQUEST);
-            }
-        };
+        TestDestinationProvider provider = new TestDestinationProvider(() -> {
+            throw new HttpClientErrorException(HttpStatus.BAD_REQUEST);
+        });
 
         PaymentProviderGateway gateway = new PaymentProviderGateway(provider, destinations, 3, 1000, 0);
         assertThrows(ProviderDefinitiveFailureException.class,
                 () -> gateway.initiate(UUID.randomUUID(), memberId, new BigDecimal("10.00"), "idem-1"));
+        assertEquals(1, provider.calls.get());
     }
 
     @Test
@@ -38,19 +37,40 @@ class PaymentProviderGatewaySafetyTest {
         org.mockito.Mockito.when(destinations.resolveActive(memberId))
                 .thenReturn(new ResolvedPaymentDestination(memberId, PaymentDestination.PixKeyType.EMAIL, "test@example.invalid"));
 
-        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
-        DestinationAwarePaymentProvider provider = new DestinationAwarePaymentProvider() {
-            @Override
-            public PaymentProvider.Initiation initiateWithDestination(UUID paymentId, BigDecimal amount, String idempotencyKey,
-                                                                      ResolvedPaymentDestination destination) {
-                calls.incrementAndGet();
-                throw new RuntimeException("network failure");
-            }
-        };
+        TestDestinationProvider provider = new TestDestinationProvider(() -> {
+            throw new RuntimeException("network failure");
+        });
 
         PaymentProviderGateway gateway = new PaymentProviderGateway(provider, destinations, 3, 1000, 0);
         assertThrows(ProviderUncertainResultException.class,
                 () -> gateway.initiate(UUID.randomUUID(), memberId, new BigDecimal("10.00"), "idem-2"));
-        org.junit.jupiter.api.Assertions.assertEquals(1, calls.get());
+        assertEquals(1, provider.calls.get());
+    }
+
+    private static final class TestDestinationProvider implements PaymentProvider, DestinationAwarePaymentProvider {
+        private final Runnable behavior;
+        private final AtomicInteger calls = new AtomicInteger();
+
+        private TestDestinationProvider(Runnable behavior) {
+            this.behavior = behavior;
+        }
+
+        @Override
+        public Initiation initiate(UUID paymentId, BigDecimal amount, String idempotencyKey) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Initiation initiateWithDestination(UUID paymentId, BigDecimal amount, String idempotencyKey,
+                                                  ResolvedPaymentDestination destination) {
+            calls.incrementAndGet();
+            behavior.run();
+            return new Initiation("never", "never");
+        }
+
+        @Override
+        public StatusResult queryStatus(String providerReference) {
+            return new StatusResult(ExternalStatus.UNKNOWN, providerReference, "test");
+        }
     }
 }
