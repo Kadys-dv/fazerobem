@@ -25,6 +25,10 @@ public interface PaymentAttemptRepository extends JpaRepository<PaymentAttempt, 
     long countByStatusAndUpdatedAtBefore(PaymentStatus status, Instant cutoff);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from PaymentAttempt p where p.id = :id")
+    Optional<PaymentAttempt> findByIdForUpdate(@Param("id") UUID id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from PaymentAttempt p where p.providerReference = :ref")
     Optional<PaymentAttempt> findByProviderReferenceForUpdate(@Param("ref") String ref);
 }
