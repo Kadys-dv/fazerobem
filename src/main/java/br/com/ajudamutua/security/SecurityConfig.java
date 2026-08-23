@@ -8,6 +8,7 @@ import java.time.Instant;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -58,6 +59,8 @@ public class SecurityConfig {
         http.authorizeHttpRequests(a -> a
                         .requestMatchers("/operations.html", "/operations.js", "/operations-dashboard.js", "/operations.css")
                         .hasAnyRole("ANALYST", "APPROVER", "ADMIN", "AUDITOR")
+                        .requestMatchers(HttpMethod.GET, "/internal/provider-probe/asaas")
+                        .permitAll()
                         .requestMatchers(
                                 "/health",
                                 "/", "/index.html", "/app.css", "/app.js", "/member-onboarding.js",
