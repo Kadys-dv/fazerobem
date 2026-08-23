@@ -179,6 +179,7 @@ jobs:
           REDIS_PORT: '6379'
           KMS_PROVIDER: local
           APP_SECURITY_MFA_REQUIRED_FOR_PRIVILEGED: 'false'
+          PAYMENT_INITIATION_ENABLED: 'true'
           OTEL_EXPORTER_OTLP_ENDPOINT: http://localhost:4318/v1/traces
         run: |
           export DB_PASSWORD="$CI_DB_PASSWORD"
