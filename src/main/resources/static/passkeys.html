@@ -1,11 +1,17 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Passkeys — Ajuda Mútua</title><style>body{font-family:system-ui;max-width:760px;margin:40px auto;padding:0 20px}button{padding:12px 18px}pre{white-space:pre-wrap;background:#f5f5f5;padding:12px;border-radius:8px}</style></head><body>
-<h1>Passkeys</h1><p>Cadastre uma passkey para usar Windows Hello, Touch ID, biometria do celular ou chave FIDO2. É necessário estar autenticado.</p><label>Nome da credencial <input id="label" value="Meu dispositivo"></label> <button id="register">Cadastrar passkey</button><pre id="out"></pre>
-<script>
-const out=document.querySelector('#out');
-const csrf=()=>decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/)||[])[1]||'');
-const b64uToBytes=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(s.length/4)*4,'=')),c=>c.charCodeAt(0));
-const bytesToB64u=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-function decodeCreation(o){o.challenge=b64uToBytes(o.challenge);o.user.id=b64uToBytes(o.user.id);if(o.excludeCredentials)o.excludeCredentials=o.excludeCredentials.map(c=>({...c,id:b64uToBytes(c.id)}));return o;}
-function serialize(c){return {id:c.id,rawId:bytesToB64u(c.rawId),type:c.type,authenticatorAttachment:c.authenticatorAttachment,response:{attestationObject:bytesToB64u(c.response.attestationObject),clientDataJSON:bytesToB64u(c.response.clientDataJSON),transports:c.response.getTransports?c.response.getTransports():[]},clientExtensionResults:c.getClientExtensionResults()};}
-document.querySelector('#register').onclick=async()=>{try{let r=await fetch('/webauthn/register/options',{method:'POST',headers:{'X-XSRF-TOKEN':csrf()}});if(!r.ok)throw new Error(await r.text());let opts=decodeCreation(await r.json());let credential=await navigator.credentials.create({publicKey:opts});let body={publicKey:{credential:serialize(credential),label:document.querySelector('#label').value}};r=await fetch('/webauthn/register',{method:'POST',headers:{'Content-Type':'application/json','X-XSRF-TOKEN':csrf()},body:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());out.textContent='Passkey cadastrada com sucesso.';}catch(e){out.textContent='Erro: '+e.message;}};
-</script></body></html>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Passkeys — Ajuda Mútua</title>
+  <style>body{font-family:system-ui;max-width:760px;margin:40px auto;padding:0 20px}button{padding:12px 18px}pre{white-space:pre-wrap;background:#f5f5f5;padding:12px;border-radius:8px}</style>
+</head>
+<body>
+  <h1>Passkeys</h1>
+  <p>Cadastre uma passkey para usar Windows Hello, Touch ID, biometria do celular ou chave FIDO2. É necessário estar autenticado.</p>
+  <label>Nome da credencial <input id="label" value="Meu dispositivo"></label>
+  <button id="register" type="button">Cadastrar passkey</button>
+  <pre id="out" role="status"></pre>
+  <script src="/passkeys.js" defer></script>
+</body>
+</html>
