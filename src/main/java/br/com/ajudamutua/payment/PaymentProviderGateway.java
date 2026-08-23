@@ -39,6 +39,10 @@ public class PaymentProviderGateway {
         this.backoffMs = Math.max(0, backoffMs);
     }
 
+    public String providerCode() {
+        return provider.providerCode();
+    }
+
     public PaymentProvider.Initiation initiate(UUID paymentId, BigDecimal amount, String idempotencyKey) {
         return retry(() -> provider.initiate(paymentId, amount, idempotencyKey));
     }
