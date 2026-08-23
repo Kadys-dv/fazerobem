@@ -1,4 +1,4 @@
-const state={me:null,cases:[],selectedId:null,csrf:null,initialized:false};
+const state={me:null,cases:[],selectedId:null,selectedMemberId:null,csrf:null,initialized:false};
 const $=id=>document.getElementById(id);
 const money=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v||0));
 const date=v=>v?new Intl.DateTimeFormat('pt-BR',{dateStyle:'short',timeStyle:'short'}).format(new Date(v)):'—';
@@ -42,6 +42,7 @@ function bind(){
   $('fraudForm').addEventListener('submit',submitFraud);
   $('approvalForm').addEventListener('submit',submitApproval);
   $('rejectionForm').addEventListener('submit',submitRejection);
+  $('pixDestinationForm').addEventListener('submit',submitPixDestination);
   $('paymentForm').addEventListener('submit',submitPayment);
   $('reconciliationForm').addEventListener('submit',submitReconciliationNote);
 }
@@ -74,6 +75,7 @@ async function selectCase(id,rerender=true){
 
 function renderDetail(d){
   const r=d.request,e=d.eligibility;
+  state.selectedMemberId=r.memberId;
   $('caseWorkspace').classList.remove('empty-state');
   $('emptyCase').classList.add('hidden');
   $('caseContent').classList.remove('hidden');
@@ -100,6 +102,7 @@ async function loadPayments(aidId,aidStatus){
   $('paymentCount').textContent=rows.length;
   $('paymentList').innerHTML=rows.length?rows.map(x=>`<div class="timeline-item"><strong>${esc(paymentStatusLabel(x.status))} · ${money(x.amount)}</strong><small>${date(x.updatedAt)} · ref ${esc(x.providerReference||'aguardando')}</small></div>`).join(''):'<p>Nenhuma tentativa de pagamento registrada.</p>';
   const active=rows.some(x=>['READY','PROCESSING','SETTLED','RECONCILIATION_REQUIRED'].includes(x.status));
+  $('pixDestinationForm').classList.toggle('hidden',state.me.role!=='ADMIN');
   $('paymentForm').classList.toggle('hidden',state.me.role!=='ADMIN');
   $('initiatePaymentButton').disabled=state.me.role!=='ADMIN'||aidStatus!=='APPROVED'||active;
   const recon=rows.find(x=>x.status==='RECONCILIATION_REQUIRED');
@@ -123,6 +126,25 @@ async function submitAnalysis(ev){ev.preventDefault();await act(`/api/v1/aid-req
 async function submitFraud(ev){ev.preventDefault();await act(`/api/v1/aid-requests/${state.selectedId}/fraud-screening`,{status:$('fraudStatus').value,riskScore:Number($('riskScore').value),flags:$('fraudFlags').value,note:$('fraudNote').value},'Triagem antifraude concluída');$('fraudForm').reset();$('riskScore').value='0';}
 async function submitApproval(ev){ev.preventDefault();await act(`/api/v1/aid-requests/${state.selectedId}/approve`,{note:$('approvalNote').value},'Aprovação registrada');$('approvalForm').reset();}
 async function submitRejection(ev){ev.preventDefault();await act(`/api/v1/aid-requests/${state.selectedId}/reject`,{note:$('rejectionNote').value},'Rejeição registrada');$('rejectionForm').reset();}
+async function submitPixDestination(ev){
+  ev.preventDefault();
+  if(state.me?.role!=='ADMIN'||!state.selectedMemberId)return;
+  const input=$('pixKey');
+  const raw=input.value.trim();
+  if(!raw)return;
+  try{
+    const saved=await json(`/api/v1/admin/payment-destinations/${encodeURIComponent(state.selectedMemberId)}/pix`,{
+      method:'PUT',
+      body:JSON.stringify({keyType:$('pixKeyType').value,pixKey:raw})
+    });
+    input.value='';
+    $('pixDestinationStatus').textContent=`Destino protegido: ${saved.masked} · ${saved.keyType}`;
+    toast('Destino Pix protegido salvo');
+  }catch(e){
+    input.value='';
+    toast(e.message);
+  }
+}
 async function submitPayment(ev){
   ev.preventDefault();
   if(!state.selectedId)return;
