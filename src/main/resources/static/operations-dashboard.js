@@ -56,6 +56,52 @@ async function loadAuditTrail(){
   }catch(e){toast(e.message);}
 }
 
+function renderProviderRefreshControl(rows){
+  const paymentCard=document.getElementById('paymentList')?.closest('.ops-card');
+  if(!paymentCard)return;
+  let control=document.getElementById('providerRefreshControl');
+  if(!control){
+    control=document.createElement('div');
+    control.id='providerRefreshControl';
+    control.className='reconciliation-form hidden';
+    control.innerHTML='<button id="providerRefreshButton" class="secondary" type="button">Consultar status no provedor</button><small>Consulta somente o status da tentativa existente. Não cria uma nova transferência.</small>';
+    document.getElementById('paymentList').insertAdjacentElement('afterend',control);
+    document.getElementById('providerRefreshButton').addEventListener('click',refreshProviderStatus);
+  }
+  const candidate=rows.find(x=>['PROCESSING','RECONCILIATION_REQUIRED'].includes(x.status));
+  control.dataset.paymentId=candidate?.id||'';
+  control.classList.toggle('hidden',state.me?.role!=='ADMIN'||!candidate);
+}
+
+async function refreshProviderStatus(){
+  const control=document.getElementById('providerRefreshControl');
+  const paymentId=control?.dataset.paymentId;
+  if(state.me?.role!=='ADMIN'||!paymentId)return;
+  const button=document.getElementById('providerRefreshButton');
+  button.disabled=true;
+  try{
+    const updated=await json(`/api/v1/payments/attempts/${encodeURIComponent(paymentId)}/refresh-provider`,{method:'POST'});
+    await selectCase(state.selectedId,false);
+    await loadOperationalSummary();
+    toast(`Status consultado: ${paymentStatusLabel(updated.status)}`);
+  }catch(e){toast(e.message);}finally{button.disabled=false;}
+}
+
+const baseLoadPayments=loadPayments;
+loadPayments=async function(aidId,aidStatus){
+  const rows=await json(`/api/v1/payments/${aidId}`);
+  $('paymentCount').textContent=rows.length;
+  $('paymentList').innerHTML=rows.length?rows.map(x=>`<div class="timeline-item"><strong>${esc(paymentStatusLabel(x.status))} · ${money(x.amount)}</strong><small>${date(x.updatedAt)} · ref ${esc(x.providerReference||'aguardando')}</small></div>`).join(''):'<p>Nenhuma tentativa de pagamento registrada.</p>';
+  const active=rows.some(x=>['READY','PROCESSING','SETTLED','RECONCILIATION_REQUIRED'].includes(x.status));
+  $('pixDestinationForm').classList.toggle('hidden',state.me.role!=='ADMIN');
+  $('paymentForm').classList.toggle('hidden',state.me.role!=='ADMIN');
+  $('initiatePaymentButton').disabled=state.me.role!=='ADMIN'||aidStatus!=='APPROVED'||active;
+  const recon=rows.find(x=>x.status==='RECONCILIATION_REQUIRED');
+  $('reconciliationForm').classList.toggle('hidden',state.me.role!=='ADMIN'||!recon);
+  $('reconciliationPaymentId').value=recon?.id||'';
+  renderProviderRefreshControl(rows);
+};
+
 const baseLoadCases=loadCases;
 loadCases=async function(){await baseLoadCases();await loadOperationalSummary();};
 
