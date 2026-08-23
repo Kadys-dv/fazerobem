@@ -3,6 +3,7 @@ package br.com.ajudamutua.security;
 import br.com.ajudamutua.model.AppUser;
 import br.com.ajudamutua.model.UserRole;
 import br.com.ajudamutua.repository.AppUserRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -21,10 +22,11 @@ public class StagingAdminBootstrapConfig {
     @Bean
     CommandLineRunner stagingAdminBootstrap(AppUserRepository users,
                                             PasswordEncoder encoder,
-                                            StagingAdminBootstrapProperties properties) {
+                                            @Value("${app.bootstrap-admin.email:}") String configuredEmail,
+                                            @Value("${app.bootstrap-admin.password:}") String configuredPassword) {
         return args -> {
-            String email = properties.email() == null ? "" : properties.email().trim().toLowerCase();
-            String password = properties.password() == null ? "" : properties.password();
+            String email = configuredEmail == null ? "" : configuredEmail.trim().toLowerCase();
+            String password = configuredPassword == null ? "" : configuredPassword;
 
             if (email.isBlank() || !email.contains("@")) {
                 throw new IllegalStateException("BOOTSTRAP_ADMIN_EMAIL must be a valid email when staging admin bootstrap is enabled");
