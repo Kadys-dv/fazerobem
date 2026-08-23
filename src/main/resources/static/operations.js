@@ -12,7 +12,15 @@ async function json(url,options={}){
     headers.set(state.csrf.headerName,state.csrf.token);
   }
   const res=await fetch(url,{...options,headers,credentials:'same-origin'});
-  if(!res.ok){let msg=`Erro ${res.status}`;try{const body=await res.json();msg=body.message||body.error||msg;}catch{}throw new Error(msg);}
+  if(!res.ok){
+    let msg=`Erro ${res.status}`;
+    try{const body=await res.json();msg=body.message||body.error||msg;}catch{}
+    if(res.status===428&&msg==='MFA_REQUIRED'){
+      location.replace('/mfa.html');
+      throw new Error('MFA_REQUIRED');
+    }
+    throw new Error(msg);
+  }
   if(res.status===204)return null;
   return res.json();
 }
@@ -52,7 +60,7 @@ async function loadCases(){
     state.cases=await json('/api/v1/aid-requests');
     renderCases();
     if(state.selectedId && state.cases.some(x=>x.id===state.selectedId)) await selectCase(state.selectedId,false);
-  }catch(e){toast(e.message);}
+  }catch(e){if(e.message!=='MFA_REQUIRED')toast(e.message);}
 }
 
 function renderCases(){
@@ -70,7 +78,7 @@ async function selectCase(id,rerender=true){
     const detail=await json(`/api/v1/operations/aid-requests/${id}`);
     renderDetail(detail);
     if(['ADMIN','AUDITOR'].includes(state.me.role)) await loadPayments(id,detail.request.status);
-  }catch(e){toast(e.message);}
+  }catch(e){if(e.message!=='MFA_REQUIRED')toast(e.message);}
 }
 
 function renderDetail(d){
@@ -142,7 +150,7 @@ async function submitPixDestination(ev){
     toast('Destino Pix protegido salvo');
   }catch(e){
     input.value='';
-    toast(e.message);
+    if(e.message!=='MFA_REQUIRED')toast(e.message);
   }
 }
 async function submitPayment(ev){
@@ -154,7 +162,7 @@ async function submitPayment(ev){
     await loadCases();
     await selectCase(state.selectedId);
     toast('Pagamento sandbox iniciado');
-  }catch(e){toast(e.message);}
+  }catch(e){if(e.message!=='MFA_REQUIRED')toast(e.message);}
 }
 async function submitReconciliationNote(ev){
   ev.preventDefault();
@@ -166,7 +174,7 @@ async function submitReconciliationNote(ev){
     $('reconciliationNote').value='';
     await selectCase(state.selectedId,false);
     toast('Nota de reconciliação registrada; status mantido');
-  }catch(e){toast(e.message);}
+  }catch(e){if(e.message!=='MFA_REQUIRED')toast(e.message);}
 }
 async function act(url,body,success){
   try{
@@ -174,9 +182,9 @@ async function act(url,body,success){
     await loadCases();
     await selectCase(state.selectedId);
     toast(success);
-  }catch(e){toast(e.message);}
+  }catch(e){if(e.message!=='MFA_REQUIRED')toast(e.message);}
 }
 
-function bootstrap(){init().catch(e=>{state.initialized=false;toast(e.message);});}
+function bootstrap(){init().catch(e=>{state.initialized=false;if(e.message!=='MFA_REQUIRED')toast(e.message);});}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootstrap,{once:true});
 else bootstrap();

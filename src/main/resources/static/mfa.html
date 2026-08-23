@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#173f35">
+  <link rel="stylesheet" href="/app.css">
+  <title>Verificação de segurança — Fazer o Bem</title>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/" aria-label="Fazer o Bem">
+    <span class="brand-mark">FB</span>
+    <span><strong>Fazer o Bem</strong><small>Verificação de segurança</small></span>
+  </a>
+</header>
+<main class="section">
+  <section class="panel">
+    <span class="eyebrow">Acesso privilegiado</span>
+    <h1>Confirme sua autenticação em duas etapas</h1>
+    <p class="muted">Administradores, analistas, aprovadores e auditores precisam confirmar um segundo fator antes de acessar dados operacionais.</p>
+
+    <div id="loadingBox" class="policy-note">Verificando sua configuração...</div>
+
+    <section id="enrollBox" class="hidden">
+      <h2>Primeiro acesso</h2>
+      <p>Adicione a chave abaixo no Google Authenticator, Microsoft Authenticator, Authy ou outro aplicativo compatível com TOTP.</p>
+      <button id="startEnroll" class="primary" type="button">Gerar chave de autenticação</button>
+      <div id="secretBox" class="policy-note hidden">
+        <strong>Chave secreta</strong>
+        <p id="secretValue"></p>
+        <small>Algoritmo SHA1 · 6 dígitos · troca a cada 30 segundos.</small>
+      </div>
+      <form id="confirmForm" class="auth-form hidden">
+        <label>Código de 6 dígitos
+          <input id="confirmCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required>
+        </label>
+        <button class="primary full" type="submit">Ativar e continuar</button>
+      </form>
+    </section>
+
+    <section id="verifyBox" class="hidden">
+      <h2>Confirmar acesso</h2>
+      <p>Abra seu aplicativo autenticador e informe o código atual de 6 dígitos.</p>
+      <form id="verifyForm" class="auth-form">
+        <label>Código de 6 dígitos
+          <input id="verifyCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required autofocus>
+        </label>
+        <button class="primary full" type="submit">Verificar e abrir painel</button>
+      </form>
+    </section>
+
+    <p id="message" class="form-message" role="status"></p>
+  </section>
+</main>
+<script src="/mfa.js" defer></script>
+</body>
+</html>
