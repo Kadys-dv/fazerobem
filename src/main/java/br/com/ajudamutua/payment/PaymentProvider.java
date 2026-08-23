@@ -8,6 +8,10 @@ public interface PaymentProvider {
 
     StatusResult queryStatus(String providerReference);
 
+    default String providerCode() {
+        return "SANDBOX";
+    }
+
     record Initiation(String providerReference, String providerRequestId) {}
 
     record StatusResult(ExternalStatus status, String providerRequestId, String detail) {}
