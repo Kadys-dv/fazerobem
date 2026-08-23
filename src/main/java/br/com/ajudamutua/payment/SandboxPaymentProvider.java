@@ -1,5 +1,6 @@
 package br.com.ajudamutua.payment;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -8,6 +9,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
+@ConditionalOnProperty(name = "app.payment-provider.type", havingValue = "sandbox", matchIfMissing = true)
 public class SandboxPaymentProvider implements PaymentProvider {
     private final Map<String, Initiation> byIdempotencyKey = new ConcurrentHashMap<>();
     private final Map<String, ExternalStatus> statuses = new ConcurrentHashMap<>();

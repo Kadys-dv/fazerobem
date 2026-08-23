@@ -89,11 +89,11 @@ public class PaymentInitiationService {
 
         validateReadyForPayment(aid, actor);
         PaymentAttempt payment = attempts.saveAndFlush(new PaymentAttempt(
-                UUID.randomUUID(), aidId, idempotencyKey, "SANDBOX", PaymentStatus.READY,
+                UUID.randomUUID(), aidId, idempotencyKey, provider.providerCode(), PaymentStatus.READY,
                 aid.getAmount(), actor.getId(), Instant.now()));
 
         PaymentProvider.Initiation initiation = provider.initiate(
-                payment.getId(), payment.getAmount(), payment.getIdempotencyKey());
+                payment.getId(), aid.getMemberId(), payment.getAmount(), payment.getIdempotencyKey());
         payment.processing(initiation.providerReference());
 
         outbox.save(new OutboxEvent(

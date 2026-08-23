@@ -42,6 +42,15 @@ app:
     document-retention-days: ${DOCUMENT_RETENTION_DAYS:365}
   payments:
     initiation-enabled: ${PAYMENT_INITIATION_ENABLED:false}
+  payment-provider:
+    type: ${PAYMENT_PROVIDER_TYPE:sandbox}
+    max-attempts: ${PAYMENT_PROVIDER_MAX_ATTEMPTS:3}
+    timeout-ms: ${PAYMENT_PROVIDER_TIMEOUT_MS:2000}
+    backoff-ms: ${PAYMENT_PROVIDER_BACKOFF_MS:100}
+    asaas:
+      base-url: ${ASAAS_BASE_URL:https://api-sandbox.asaas.com/v3}
+      api-key: ${ASAAS_SANDBOX_API_KEY:}
+      user-agent: ${ASAAS_USER_AGENT:FazerOBem/0.1 (sandbox)}
   reconciliation:
     fixed-delay-ms: ${RECONCILIATION_DELAY_MS:60000}
   outbox:
