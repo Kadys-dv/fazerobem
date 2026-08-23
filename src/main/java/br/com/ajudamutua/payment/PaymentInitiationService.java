@@ -92,18 +92,38 @@ public class PaymentInitiationService {
                 UUID.randomUUID(), aidId, idempotencyKey, provider.providerCode(), PaymentStatus.READY,
                 aid.getAmount(), actor.getId(), Instant.now()));
 
-        PaymentProvider.Initiation initiation = provider.initiate(
-                payment.getId(), aid.getMemberId(), payment.getAmount(), payment.getIdempotencyKey());
-        payment.processing(initiation.providerReference());
+        try {
+            PaymentProvider.Initiation initiation = provider.initiate(
+                    payment.getId(), aid.getMemberId(), payment.getAmount(), payment.getIdempotencyKey());
+            payment.processing(initiation.providerReference());
 
-        outbox.save(new OutboxEvent(
-                UUID.randomUUID(), "PaymentAttempt", payment.getId(), "PAYMENT_PROCESSING",
-                "{\"providerReference\":\"" + initiation.providerReference() +
-                        "\",\"providerRequestId\":\"" + initiation.providerRequestId() + "\"}", Instant.now()));
-        audit.append(actor.getId(), "PAYMENT_INITIATED", "AidRequest", aidId,
-                "{\"paymentAttemptId\":\"" + payment.getId() +
-                        "\",\"providerRequestId\":\"" + initiation.providerRequestId() + "\"}");
-        return payment;
+            outbox.save(new OutboxEvent(
+                    UUID.randomUUID(), "PaymentAttempt", payment.getId(), "PAYMENT_PROCESSING",
+                    "{\"providerReference\":\"" + initiation.providerReference() +
+                            "\",\"providerRequestId\":\"" + initiation.providerRequestId() + "\"}", Instant.now()));
+            audit.append(actor.getId(), "PAYMENT_INITIATED", "AidRequest", aidId,
+                    "{\"paymentAttemptId\":\"" + payment.getId() +
+                            "\",\"providerRequestId\":\"" + initiation.providerRequestId() + "\"}");
+            return payment;
+        } catch (ProviderDefinitiveFailureException rejected) {
+            payment.fail("PROVIDER_REJECTED");
+            outbox.save(new OutboxEvent(
+                    UUID.randomUUID(), "PaymentAttempt", payment.getId(), "PAYMENT_FAILED",
+                    "{\"reason\":\"PROVIDER_REJECTED\"}", Instant.now()));
+            audit.append(actor.getId(), "PAYMENT_INITIATION_REJECTED", "AidRequest", aidId,
+                    "{\"paymentAttemptId\":\"" + payment.getId() + "\"}");
+            return payment;
+        } catch (ProviderUncertainResultException uncertain) {
+            // Persist the same payment attempt and idempotency key. A subsequent request must return
+            // this record instead of issuing another outbound POST that could duplicate a transfer.
+            payment.requireReconciliation();
+            outbox.save(new OutboxEvent(
+                    UUID.randomUUID(), "PaymentAttempt", payment.getId(), "PAYMENT_RECONCILIATION_REQUIRED",
+                    "{\"reason\":\"PROVIDER_RESULT_UNCERTAIN\"}", Instant.now()));
+            audit.append(actor.getId(), "PAYMENT_INITIATION_UNCERTAIN", "AidRequest", aidId,
+                    "{\"paymentAttemptId\":\"" + payment.getId() + "\"}");
+            return payment;
+        }
     }
 
     private PaymentAttempt findPrior(String idempotencyKey, UUID aidId) {

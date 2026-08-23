@@ -3,11 +3,13 @@ package br.com.ajudamutua.payment;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -58,8 +60,8 @@ public class PaymentProviderGateway {
             throw new IllegalStateException("Serviço de destino de pagamento indisponível");
         }
         try (ResolvedPaymentDestination destination = destinations.resolveActive(memberId)) {
-            // Outbound transfer creation is deliberately not retried. A timeout after the
-            // provider accepted a POST could otherwise create a duplicate transfer.
+            // Transfer creation is deliberately executed once. A timeout or transport failure can
+            // mean the provider accepted the POST even though this process never saw the response.
             return executeOnce(() -> destinationAware.initiateWithDestination(
                     paymentId, amount, idempotencyKey, destination));
         }
@@ -75,13 +77,20 @@ public class PaymentProviderGateway {
                         try {
                             return operation.call();
                         } catch (Exception e) {
-                            throw new RuntimeException(e);
+                            throw new CompletionException(e);
                         }
                     })
                     .orTimeout(timeout.toMillis(), TimeUnit.MILLISECONDS)
                     .join();
         } catch (RuntimeException ex) {
-            throw new IllegalStateException("Resultado da iniciação do provider é incerto; reconciliar antes de tentar novamente", ex);
+            Throwable root = rootCause(ex);
+            // HTTP 4xx means the provider explicitly rejected the request and therefore the
+            // operation is definitively not accepted. Never classify it as an uncertain timeout.
+            if (root instanceof HttpClientErrorException) {
+                throw new ProviderDefinitiveFailureException("Provider rejeitou a iniciação", root);
+            }
+            throw new ProviderUncertainResultException(
+                    "Resultado da iniciação do provider é incerto; reconciliar antes de tentar novamente", root);
         }
     }
 
@@ -93,7 +102,7 @@ public class PaymentProviderGateway {
                             try {
                                 return operation.call();
                             } catch (Exception e) {
-                                throw new RuntimeException(e);
+                                throw new CompletionException(e);
                             }
                         })
                         .orTimeout(timeout.toMillis(), TimeUnit.MILLISECONDS)
@@ -111,5 +120,13 @@ public class PaymentProviderGateway {
             }
         }
         throw new IllegalStateException("Provider indisponível após retries", last);
+    }
+
+    private static Throwable rootCause(Throwable error) {
+        Throwable current = error;
+        while (current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        return current;
     }
 }
