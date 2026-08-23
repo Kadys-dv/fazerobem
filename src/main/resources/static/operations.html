@@ -81,6 +81,22 @@
             <article class="ops-card">
               <div class="panel-title"><strong>Pagamento sandbox</strong><span id="paymentCount">0</span></div>
               <p>O admin apenas inicia a tentativa. A liquidação é confirmada exclusivamente por webhook assinado do provedor sandbox.</p>
+              <form id="pixDestinationForm" class="form-grid hidden" autocomplete="off">
+                <label for="pixKeyType">Tipo da chave Pix
+                  <select id="pixKeyType" required>
+                    <option value="EMAIL">E-mail</option>
+                    <option value="CPF">CPF</option>
+                    <option value="CNPJ">CNPJ</option>
+                    <option value="PHONE">Telefone</option>
+                    <option value="EVP">Chave aleatória</option>
+                  </select>
+                </label>
+                <label for="pixKey">Chave Pix de homologação
+                  <input id="pixKey" type="password" maxlength="120" required autocomplete="off" spellcheck="false">
+                </label>
+                <button class="secondary" type="submit">Salvar destino Pix protegido</button>
+                <small id="pixDestinationStatus">Nenhum destino cadastrado nesta sessão.</small>
+              </form>
               <form id="paymentForm" class="hidden"><button id="initiatePaymentButton" class="primary" type="submit">Iniciar pagamento sandbox</button></form>
               <div id="paymentList" class="timeline"></div>
               <form id="reconciliationForm" class="reconciliation-form hidden">
