@@ -15,7 +15,7 @@ jobs:
       DB_USER: ${{ secrets.NEON_STAGING_DB_USER }}
       DB_PASSWORD: ${{ secrets.NEON_STAGING_DB_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate fail-closed staging configuration
         shell: bash
