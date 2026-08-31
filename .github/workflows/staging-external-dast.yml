@@ -14,7 +14,7 @@ jobs:
       STAGING_BASE_URL: https://fazerobem-staging.onrender.com
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Prepare evidence directories
         run: mkdir -p evidence/external-health evidence/external-zap
