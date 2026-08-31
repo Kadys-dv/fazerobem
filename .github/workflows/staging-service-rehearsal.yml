@@ -196,7 +196,7 @@ jobs:
           } > evidence/service-rehearsal-evidence.txt
 
       - name: Upload evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: staging-service-rehearsal-${{ github.run_id }}
           path: evidence/
